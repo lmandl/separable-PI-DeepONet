@@ -1,16 +1,17 @@
-# This is a sample Python script.
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+from models.deep_onet import DeepONet
+from data.data_generator import generate_data
 
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
+    print('Project in Development')
+    # Generate data
+    train_data, test_data = generate_data()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    # Initialize model
+    model = DeepONet()
+
+    # Train model
+    model.train(train_data)
+
+    # Test model
+    model.test(test_data)
