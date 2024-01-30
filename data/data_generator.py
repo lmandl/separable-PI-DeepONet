@@ -1,25 +1,21 @@
 import jax.numpy as jnp
 
-def generate_train_data(args):
+
+def generate_data(args):
     eqn = args.equation
-    if eqn == 'biot2d':
-        data = train_generator_biot1d(args)
+    if eqn == 'biot1d':
+        train_data = train_generator_biot1d(args)
+        test_data = test_generator_biot1d(args)
     else:
         raise NotImplementedError
-    return data
+    return train_data, test_data
+
 
 def train_generator_biot1d(args):
-    #TBD
+    # TODO
     return NotImplementedError
 
-def generate_test_data(args):
-        eqn = args.equation
-        if eqn == 'biot2d':
-            data = test_generator_biot1d(args)
-        else:
-            raise NotImplementedError
-        return data
 
 def test_generator_biot1d(args):
-    # TBD
+    # TODO
     return NotImplementedError

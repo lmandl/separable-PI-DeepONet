@@ -23,7 +23,7 @@ Upcoming examples:
 * 2D Consolidation using Biot / TPM
 
 #### Note on dimensions
-Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time as input.
+Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time t as input.
 
 ## References
 
