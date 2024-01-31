@@ -6,7 +6,8 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JaX
 
 ### Models
 #### Planned
-* vanilla stacked DeepONets with Bias
+* vanilla stacked DeepONets with Bias for antiderivative example (data taken from )
+* extension to Biot's equation but only for 1 output (displacement u)
 * Extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
 
@@ -15,7 +16,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JaX
 * Hard Enforcement of Dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 
 ### Data/Equations
-Project is focused on later use of (physics-informed) DeepONets for solving problems in porous media. Currently available are:
+Project is focused on later use of (physics-informed) DeepONets for solving problems in porous media. Current plans are:
 * Biot's equation of consolidation in 1D
 
 Upcoming examples:
@@ -31,6 +32,9 @@ Reference Codes:
 * https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets
 * https://github.com/lululxvi/deeponet
 * https://github.com/lu-group/deeponet-fno
+* https://github.com/lululxvi/deepxde
+* https://github.com/katiana22/TL-DeepONet
+* https://github.com/kuangdai/deeponet-jax-bench
 
 ## Open Questions
 * stacked vs. unstacked DeepONets?
