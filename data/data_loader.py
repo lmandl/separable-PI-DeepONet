@@ -5,6 +5,7 @@ import numpy as np
 def load_data(data_dir, eqn):
     """
     Load data for a given equation
+    data should be [features, samples] for both train and test
     """
     # Check if equation is implemented
     # Then load data
@@ -35,11 +36,11 @@ def load_antiderivative_aligned(data_dir):
     Expects data to be saved as train.npz and test.npz in data_dir
     """
     d = np.load(os.path.join(data_dir, "train.npz"), allow_pickle=True)
-    x_train, y_train = (d["X"][0], d["X"][1]), d["y"]
+    x_train, y_train = (d["X"][0].T, d["X"][1].T), d["y"].T
 
     d = np.load(os.path.join(data_dir, "test.npz"), allow_pickle=True)
-    x_test = (d["X"][0], d["X"][1])
-    y_test = d["y"]
+    x_test = (d["X"][0].T, d["X"][1].T)
+    y_test = d["y"].T
     return [x_train, y_train], [x_test, y_test]
 
 

@@ -5,6 +5,7 @@ from typing import Sequence
 
 
 class DeepONet(nn.Module):
+    # TODO: Adapt to stacked / unstacked version
     branch_layers: Sequence[int]
     branch_ac: str
     trunk_layers: Sequence[int]
@@ -13,17 +14,17 @@ class DeepONet(nn.Module):
     output_dim: int
 
     def setup(self):
-        keys = jax.random.split(self.key, 2)
-        self.trunk = FNN(features=self.trunk_layers, activation=self.trunk_ac, output_activation=True, key=keys[0])
-        self.branch = FNN(features=self.branch_layers, activation=self.branch_ac, output_activation=False, key=keys[1])
+        self.branch = FNN(features=self.branch_layers, activation=self.branch_ac, output_activation=False)
+        self.trunk = FNN(features=self.trunk_layers, activation=self.trunk_ac, output_activation=True)
         if self.use_bias:
-            self.bias = self.param('bias', nn.initializers.zeros, (self.ouput_dim,))
+            self.bias = self.param('bias', nn.initializers.zeros, (self.output_dim,))
 
-    def __call__(self, branch_input, trunk_input):
+    def __call__(self, inputs):
+        branch_input, trunk_input = inputs
         branch_output = self.branch(branch_input)
         trunk_output = self.trunk(trunk_input)
 
-        result = jnp.sum(branch_output*trunk_output)
+        result = jnp.sum(branch_output*trunk_output, axis=-1)
 
         if self.use_bias:
             result += self.bias
@@ -62,3 +63,13 @@ class FNN(nn.Module):
         if self.output_activation:
             x = self.ac_fun(x)
         return x
+
+
+def train_step(optimizer, model, x, y):
+    def loss_fn(model_in):
+        y_pred = model_in(x)
+        return jnp.mean((y - y_pred) ** 2)
+
+    loss, grad = jax.value_and_grad(loss_fn)(model)
+    optimizer = optimizer.apply_gradient(grad)
+    return optimizer, loss
