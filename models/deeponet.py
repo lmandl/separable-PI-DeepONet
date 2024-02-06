@@ -6,9 +6,9 @@ from typing import Sequence
 
 class DeepONet(nn.Module):
     # TODO: Adapt to stacked / unstacked version
-    branch_layers: Sequence[int]
+    branch_layers: tuple
     branch_ac: str
-    trunk_layers: Sequence[int]
+    trunk_layers: tuple
     trunk_ac: str
     use_bias: bool
     output_dim: int
@@ -23,7 +23,7 @@ class DeepONet(nn.Module):
         branch_input, trunk_input = inputs
         branch_output = self.branch(branch_input)
         trunk_output = self.trunk(trunk_input)
-
+        # TODO: Check formats and shapes
         result = jnp.sum(branch_output*trunk_output, axis=-1)
 
         if self.use_bias:
@@ -36,7 +36,7 @@ class FNN(nn.Module):
     """
     see https://flax.readthedocs.io/en/latest/guides/flax_fundamentals/flax_basics.html
     """
-    features: Sequence[int]
+    features: tuple
     activation: str
     output_activation: bool
 

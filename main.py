@@ -89,7 +89,7 @@ def main(args):
         if epoch % args.log_iter == 0:
             error = train_error(model, params, test_data[0], test_data[1])
             log_file.write(f'Epoch: {epoch}, Loss: {loss}, Error: {error}\n')
-            print(f'Epoch: {epoch}, Loss: {loss}, Error: {error}\n')
+            print(f'Epoch: {epoch}/{args.epochs} --> total loss: {loss:.8f}, error: {error:.8f}')
 
     print("Training done")
     # training done
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     # model settings
     parser.add_argument('--use_equation', type=bool, default=False,
                         help='use equation for physics-informed DeepONet, if false only data is used')
-    parser.add_argument('--problem', type=str, default='antiderivative_aligned', help='equation / problem to solve')
+    parser.add_argument('--problem', type=str, default='antiderivative_unaligned', help='equation / problem to solve')
     parser.add_argument('--problem_hyperparam', type=dict,
                         default={"alpha": [1e0, 1e2],
                                  "beta": [1e-2, 1e0],
@@ -118,14 +118,14 @@ if __name__ == '__main__':
                         help='hyperparameters for equation setup, e.g. domain, ranges, boundary conditions, etc.')
     parser.add_argument('--num_outputs', type=int, default=1, help='number of outputs')
     parser.add_argument('--use_bias', type=bool, default=True, help='use bias in DeepONet')
-    parser.add_argument('--hidden_dim', type=int, default=40, help='latent layer size in DeepONet')
+    parser.add_argument('--hidden_dim', type=int, default=40, help='latent layer size in DeepONet, also called >>p<<')
 
     # Data settings
     parser.add_argument('--generate_data', type=bool, default=False,
                         help='generate data or use stored data in data_dir, requires data_generator')
     parser.add_argument('--save_data', type=bool, default=False,
                         help='save generated data to data_dir, requires data_generator')
-    parser.add_argument('--data_dir', type=str, default='./data/antiderivative_aligned',
+    parser.add_argument('--data_dir', type=str, default='./data/antiderivative_unaligned',
                         help='a directory where train and test data are saved, relative to cwd')
     parser.add_argument('--train_samples', type=int, default=10000, help='number of training samples to generate')
     parser.add_argument('--test_samples', type=int, default=10000, help='number of test samples to generate')
@@ -144,10 +144,10 @@ if __name__ == '__main__':
     # Training settings
     parser.add_argument('--seed', type=int, default=1337, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=50000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=100, help='training epochs')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=2500, help='iteration to save loss and error')
+    parser.add_argument('--log_iter', type=int, default=10, help='iteration to save loss and error')
 
     print('Project in Development')
 

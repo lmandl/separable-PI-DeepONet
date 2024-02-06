@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 import jax
 import optax
+from functools import partial
 
 
 def relative_l2(u_gt, u):
@@ -30,7 +31,6 @@ def mse_loss(y_true, y_pred):
     short version for call in loss functions
     """
     return jnp.mean((y_true - y_pred) ** 2)
-
 
 def train_step(optimizer, model, opt_state_fn, params_fn, x, y):
     def loss_fn(params_loss):
