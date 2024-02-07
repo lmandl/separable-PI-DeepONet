@@ -12,7 +12,8 @@ def relative_l2(u_gt, u):
     if isinstance(u, list) and isinstance(u_gt, list):
         u = jnp.dstack([jnp.array(elem) for elem in u])
         u_gt = jnp.dstack([jnp.array(elem) for elem in u_gt])
-    return jnp.linalg.norm(u - u_gt) / jnp.linalg.norm(u_gt)
+    rel_l2 = jnp.linalg.norm(u - u_gt) / jnp.linalg.norm(u_gt)
+    return rel_l2
 
 
 def mse(u, u_gt):
@@ -45,11 +46,13 @@ def update_model(optim, gradient, params, state):
 def loss_and_grad(model_fn, params, x, y):
     def loss_fn(params_loss):
         y_pred = model_fn(params_loss, x[0], x[1])
-        return mse_loss(y, y_pred)
+        mse_val = mse_loss(y, y_pred)
+        return mse_val
     return jax.value_and_grad(loss_fn)(params)
 
 
 @partial(jax.jit, static_argnums=(0,))
 def train_error(model_fn, params, x, y):
     y_pred = model_fn(params, x[0], x[1])
-    return relative_l2(y, y_pred)
+    rel_l2 = relative_l2(y, y_pred)
+    return rel_l2

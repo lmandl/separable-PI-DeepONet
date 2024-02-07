@@ -134,12 +134,12 @@ if __name__ == '__main__':
     parser.add_argument('--test_samples', type=int, default=10000, help='number of test samples to generate')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=list, default=[128, 128, 128], help='hidden branch layer sizes')
+    parser.add_argument('--branch_layers', type=list, default=[40], help='hidden branch layer sizes')
     parser.add_argument('--branch_input_features', type=int, default=100,
                         help='number of input features to branch network')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=list, default=[128, 128, 128], help='hidden trunk layer sizes')
+    parser.add_argument('--trunk_layers', type=list, default=[40], help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=1, help='number of input features to trunk network')
 
     # Training settings
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=10000, help='training epochs')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
+    parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
 
     print('Project in Development')
 
