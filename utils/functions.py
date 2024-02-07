@@ -32,17 +32,24 @@ def mse_loss(y_true, y_pred):
     """
     return jnp.mean((y_true - y_pred) ** 2)
 
-def train_step(optimizer, model, opt_state_fn, params_fn, x, y):
+
+# single update function
+@partial(jax.jit, static_argnums=(0,))
+def update_model(optim, gradient, params, state):
+    updates, state = optim.update(gradient, state)
+    params = optax.apply_updates(params, updates)
+    return params, state
+
+
+@partial(jax.jit, static_argnums=(0,))
+def loss_and_grad(model_fn, params, x, y):
     def loss_fn(params_loss):
-        y_pred = model.apply(params_loss, x)
+        y_pred = model_fn(params_loss, x[0], x[1])
         return mse_loss(y, y_pred)
-
-    loss, grads = jax.value_and_grad(loss_fn)(params_fn)
-    updates, opt_state_fn = optimizer.update(grads, opt_state_fn)
-    params_fn = optax.apply_updates(params_fn, updates)
-    return opt_state_fn, params_fn, loss
+    return jax.value_and_grad(loss_fn)(params)
 
 
-def train_error(model, params, x, y):
-    y_pred = model.apply(params, x)
+@partial(jax.jit, static_argnums=(0,))
+def train_error(model_fn, params, x, y):
+    y_pred = model_fn(params, x[0], x[1])
     return relative_l2(y, y_pred)
