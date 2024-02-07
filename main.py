@@ -104,15 +104,10 @@ def main(args):
 if __name__ == '__main__':
     # parse command line arguments
     parser = argparse.ArgumentParser()
-
-    # result directory
-    parser.add_argument('--result_dir', type=str, default='./result/antiderivative',
-                        help='a directory to save results, relative to cwd')
-
     # model settings
-    parser.add_argument('--use_equation', type=bool, default=False,
-                        help='use equation for physics-informed DeepONet, if false only data is used')
     parser.add_argument('--problem', type=str, default='antiderivative_unaligned', help='equation / problem to solve')
+    parser.add_argument('--use_equation', dest='use_equation', default=False, action='store_true')
+
     parser.add_argument('--problem_hyperparam', type=dict,
                         default={"alpha": [1e0, 1e2],
                                  "beta": [1e-2, 1e0],
@@ -124,9 +119,10 @@ if __name__ == '__main__':
     parser.add_argument('--hidden_dim', type=int, default=128, help='latent layer size in DeepONet, also called >>p<<')
 
     # Data settings
-    parser.add_argument('--generate_data', type=bool, default=False,
+    parser.add_argument('--generate_data', dest='generate_data', default=False, action='store_true',
                         help='generate data or use stored data in data_dir, requires data_generator')
-    parser.add_argument('--save_data', type=bool, default=False,
+
+    parser.add_argument('--save_data', dest='save_data', default=False, action='store_true',
                         help='save generated data to data_dir, requires data_generator')
     parser.add_argument('--data_dir', type=str, default='./data/antiderivative_unaligned',
                         help='a directory where train and test data are saved, relative to cwd')
@@ -134,12 +130,12 @@ if __name__ == '__main__':
     parser.add_argument('--test_samples', type=int, default=10000, help='number of test samples to generate')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=list, default=[40], help='hidden branch layer sizes')
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=40, help='hidden branch layer sizes')
     parser.add_argument('--branch_input_features', type=int, default=100,
                         help='number of input features to branch network')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=list, default=[40], help='hidden trunk layer sizes')
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=40, help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=1, help='number of input features to trunk network')
 
     # Training settings
@@ -147,9 +143,15 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=10000, help='training epochs')
 
+    # result directory
+    parser.add_argument('--result_dir', type=str, default='./result/antiderivative',
+                        help='a directory to save results, relative to cwd')
+
     # log settings
     parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
 
+    args = parser.parse_args()
+
     print('Project in Development')
 
-    main(parser.parse_args())
+    main(args)
