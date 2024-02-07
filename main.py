@@ -9,7 +9,7 @@ import time
 
 from data import load_data, generate_data
 from utils import train_error, update_model, loss_and_grad
-from models import DeepONet
+from models import UnstackedDeepONet, StackedDeepONet
 
 
 def main(args):
@@ -53,11 +53,24 @@ def main(args):
     print("Data assembled. Initializing model...")
 
     # Initialize model and params
-    branch_layers = [args.branch_input_features]+args.branch_layers+[args.hidden_dim]
+    # make sure trunk_layers and branch_layers are lists
+    args.trunk_layers = [args.trunk_layers] if isinstance(args.trunk_layers, int) else args.trunk_layers
+    args.branch_layers = [args.branch_layers] if isinstance(args.branch_layers, int) else args.branch_layers
+
+    # add input and output features to trunk and branch layers
     trunk_layers = [args.trunk_input_features]+args.trunk_layers+[args.hidden_dim]
 
-    # build model
-    model = DeepONet(branch_layers, trunk_layers, args.num_outputs)
+    # Stacked or unstacked DeepONet
+    if args.stacked_do:
+        # add input and output features to branch layers for stacked DeepONet, which has one output feature
+        branch_layers = [args.branch_input_features]+args.branch_layers+[1]
+        # build model
+        model = StackedDeepONet(branch_layers, trunk_layers, args.num_outputs, args.hidden_dim)
+    else:
+        # add input and output features to branch layers for unstacked DeepONet
+        branch_layers = [args.branch_input_features]+args.branch_layers+[args.hidden_dim]
+        # build model
+        model = UnstackedDeepONet(branch_layers, trunk_layers, args.num_outputs)
 
     # Initialize parameters
     params = model.init(key, jnp.ones(args.branch_input_features), jnp.ones(args.trunk_input_features))
@@ -104,9 +117,11 @@ def main(args):
 if __name__ == '__main__':
     # parse command line arguments
     parser = argparse.ArgumentParser()
+
     # model settings
     parser.add_argument('--problem', type=str, default='antiderivative_unaligned', help='equation / problem to solve')
-    parser.add_argument('--use_equation', dest='use_equation', default=False, action='store_true')
+    parser.add_argument('--use_equation', dest='use_equation', default=False, action='store_true',
+                        help='use equation for physics-informed DeepONet, if false only data is used')
 
     parser.add_argument('--problem_hyperparam', type=dict,
                         default={"alpha": [1e0, 1e2],
@@ -116,7 +131,9 @@ if __name__ == '__main__':
                                  "t_end": 1},
                         help='hyperparameters for equation setup, e.g. domain, ranges, boundary conditions, etc.')
     parser.add_argument('--num_outputs', type=int, default=1, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=128, help='latent layer size in DeepONet, also called >>p<<')
+    parser.add_argument('--hidden_dim', type=int, default=4, help='latent layer size in DeepONet, also called >>p<<')
+    parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
+                        help='use stacked DeepONet, if false use unstacked DeepONet')
 
     # Data settings
     parser.add_argument('--generate_data', dest='generate_data', default=False, action='store_true',

@@ -1,2 +1,2 @@
-from .deeponet import DeepONet
+from .deeponet import UnstackedDeepONet, StackedDeepONet
 

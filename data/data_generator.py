@@ -13,7 +13,6 @@ def generate_data(args, key):
 
 def generator_biot1d(args, key, train=True):
     # TODO: To be adapted to input/output structure of DeepONets
-    """
     # Note: At the moment only approximating u
     hyperparams = args.problem_hyperparam
     # Unpack hyperparams
@@ -30,7 +29,7 @@ def generator_biot1d(args, key, train=True):
 
     # Split key
     keys = jax.random.split(key, 5)
-    """
+
     raise NotImplementedError
 
 

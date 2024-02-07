@@ -5,8 +5,11 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JaX
 ## Roadmap
 
 ### Models
-#### Planned
+
+#### Implemented
 * vanilla DeepONets with Bias for antiderivative example (data taken from DeepXDE examples)
+
+#### Planned
 * extension to Biot's equation but only for 1 output (displacement u)
 * Extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
@@ -42,7 +45,9 @@ Reference Codes:
 ## Open Questions
 * stacked vs. unstacked DeepONets?
   * stacked DeepONets best according to https://www.sciencedirect.com/science/article/pii/S0045782522001207
+    > "Four slightly different versions of DeepONet have been developed in Ref. [18], but in this study we use the stacked DeepONet with bias, which exhibits the best performance in practice among all our versions of DeepONet."
   * unstacked DeepONets best according to https://arxiv.org/abs/1910.03193
+    > "Compared to stacked DeepONets, although unstacked DeepONets have larger training error, the test error is smaller, due to the smaller generalization error. Therefore, unstacked DeepONets with bias achieve the best performance. In addition, unstacked DeepONets have fewer number of parameters than stacked DeepONets, and thus can be trained faster using much less memory."
 * Which strategy for multiple ($n$) outputs?
   * n independent DeepONets
   * split branch and trunk in n groups
