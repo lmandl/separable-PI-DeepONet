@@ -4,8 +4,13 @@ import numpy as np
 
 def load_data(data_dir, eqn):
     """
-    Load data for a given equation
-    data should be [samples, features] for both train and test
+    load data for the given problem
+    data should be a tuple of (train_data, test_data)
+    train_data and test_data should be a tuple of ((branch_input, trunk_input), output)
+    trunk_input should be a tuple of coordinates where to evaluate and parameters, i.e. (x, t, alpha, beta, a, length)
+    branch_input should be a vector of function values
+    if the input function has two values, e.g. (u, p), then the respective branch_input should be
+    flattened and concatenated along the first axis
     """
     # Check if equation is implemented
     # Then load data

@@ -49,7 +49,6 @@ def main(args):
         train_data, test_data = generate_data(args, subkey)
     else:
         train_data, test_data = load_data(data_dir, eqn)
-
     print("Data assembled. Initializing model...")
 
     # Overriding split_trunk and split_branch if num_outputs is 1
@@ -75,10 +74,12 @@ def main(args):
 
     # Stacked or unstacked DeepONet
     # dimensions for splits are calculated once here
+    # branch input features are multiplied by n_sensors as each input function is evaluated at n_sensors
+    # they are than stacked as vector
     if args.stacked_do:
         # add input and output features to branch layers for stacked DeepONet, which has one output feature
         # if split_branch is True, the output features are split into n groups for n outputs but layer sizes are kept
-        branch_layers = [args.branch_input_features]+args.branch_layers+[1]
+        branch_layers = [args.n_sensors*args.branch_input_features]+args.branch_layers+[1]
         # build model
         if args.split_branch:
             # If branches are split, we need to multiply the hidden_dim by the number of outputs
@@ -91,14 +92,16 @@ def main(args):
         # add input and output features to branch layers for unstacked DeepONet
         # if split_branch is True, the output features are split into n groups for n outputs
         if args.split_branch:
-            branch_layers = [args.branch_input_features]+args.branch_layers+[args.num_outputs*args.hidden_dim]
+            branch_layers = ([args.n_sensors*args.branch_input_features] +
+                             args.branch_layers + [args.num_outputs*args.hidden_dim])
         else:
-            branch_layers = [args.branch_input_features]+args.branch_layers+[args.hidden_dim]
+            branch_layers = ([args.n_sensors*args.branch_input_features] +
+                             args.branch_layers + [args.hidden_dim])
         # build model
         model = UnstackedDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk,
                                   args.num_outputs)
     # Initialize parameters
-    params = model.init(key, jnp.ones(args.branch_input_features), jnp.ones(args.trunk_input_features))
+    params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
 
     # model function
     model_fn = jax.jit(model.apply)
@@ -174,7 +177,8 @@ if __name__ == '__main__':
 
     # Branch settings
     parser.add_argument('--branch_layers', type=int, nargs="+", default=40, help='hidden branch layer sizes')
-    parser.add_argument('--branch_input_features', type=int, default=100,
+    parser.add_argument('--n_sensors', type=int, default=100, help='number of sensors for branch network')
+    parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features to branch network')
     parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
                         help='split branch outputs into n groups for n outputs')
@@ -199,8 +203,8 @@ if __name__ == '__main__':
     # log settings
     parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
 
-    args = parser.parse_args()
+    args_in = parser.parse_args()
 
     print('Project in Development')
 
-    main(args)
+    main(args_in)

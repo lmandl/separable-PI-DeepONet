@@ -32,6 +32,9 @@ Please note that all problems are spatiotemporal problems and we denote spatial 
 #### Note on alignment of datasets
 DeepXDE allows to differentiate between aligned and unaligned datasets. For the sake of easier use later on, the framework expects unaligned data. Hence, for the respective problems with aligned datasets, the data has to be loaded in the correct form or manipulated in the respective form. More information can be extracted from https://deepxde.readthedocs.io/en/latest/modules/deepxde.data.html#deepxde.data.triple.TripleCartesianProd. (TBD in code)
 
+#### Multiple inputs to branch network
+function with several values per sensor can be included which will be achieved by flattening the input in the DeepONet 
+
 ## References
 
 Reference Codes: 
@@ -53,3 +56,4 @@ Reference Codes:
   * split branch and trunk in n groups
   * split branch in n groups, share trunk
   * share branch, split trunk in n groups
+* Multiple inputs to branch (e.g. two outputs (u,p) and two inputs (u, p)?)
