@@ -3,60 +3,13 @@ from flax import linen as nn
 from typing import Sequence
 
 
-class UnstackedDeepONet(nn.Module):
+class DeepONet(nn.Module):
     branch_layers: Sequence[int]
     trunk_layers: Sequence[int]
     split_branch: bool = False
     split_trunk: bool = False
-    output_dim: int = 1
-
-    @nn.compact
-    def __call__(self, branch_x, trunk_x):
-
-        init = nn.initializers.glorot_normal()
-
-        # Make sure the input is 2D (also during init)
-        if len(branch_x.shape) == 1:
-            branch_x = jnp.reshape(branch_x, (1, -1))
-        if len(trunk_x.shape) == 1:
-            trunk_x = jnp.reshape(trunk_x, (1, -1))
-
-        # Branch network
-        for i, fs in enumerate(self.branch_layers[:-1]):
-            branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
-            branch_x = nn.activation.tanh(branch_x)
-        branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{i+1}", kernel_init=init)(branch_x)
-        # no output activation
-
-        # reshape the output
-        # reshape from [batch_size, p*output_dim] to [batch_size, p, output_dim] if split_branch is True
-        if self.split_branch:
-            branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1] // self.output_dim, self.output_dim))
-
-        # Trunk network
-        for i, fs in enumerate(self.trunk_layers):
-            trunk_x = nn.Dense(fs, kernel_init=init, name=f"trunk_{i}")(trunk_x)
-            trunk_x = nn.activation.tanh(trunk_x)
-        # reshape the output
-        # reshape from [batch_size, p*output_dim] to [batch_size, p, output_dim] if split_trunk is True
-        if self.split_trunk:
-            trunk_x = jnp.reshape(trunk_x, (-1, trunk_x.shape[1] // self.output_dim, self.output_dim))
-
-        # Compute the final output
-        result = output_einsum(self.split_branch, self.split_trunk, branch_x, trunk_x)
-
-        # Add bias
-        bias = self.param('output_bias', nn.initializers.zeros, (self.output_dim,))
-        result += bias
-
-        return result
-
-
-class StackedDeepONet(nn.Module):
-    branch_layers: Sequence[int]
-    trunk_layers: Sequence[int]
-    split_branch: bool = False
-    split_trunk: bool = False
+    stacked: bool = False
+    separable: bool = False
     output_dim: int = 1
     n_branches: int = 1
 
@@ -71,19 +24,32 @@ class StackedDeepONet(nn.Module):
         if len(trunk_x.shape) == 1:
             trunk_x = jnp.reshape(trunk_x, (1, -1))
 
+        # Branch network
+        # if stacked, then we have multiple branches
         # Branch networks
-        branch_out = []
-        for j in range(self.n_branches):
-            for i, fs in enumerate(self.branch_layers[:-1]):
-                branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{j}_{i}")(branch_x)
-                branch_x = nn.activation.tanh(branch_x)
-            branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{j}_{i+1}", kernel_init=init)(branch_x)
-            # no output activation
-            branch_out.append(branch_x)
+        if self.stacked:
+            branch_out = []
+            for j in range(self.n_branches):
+                for i, fs in enumerate(self.branch_layers[:-1]):
+                    branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{j}_{i}")(branch_x)
+                    branch_x = nn.activation.tanh(branch_x)
+                branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{j}_{i+1}", kernel_init=init)(branch_x)
+                # no output activation
+                branch_out.append(branch_x)
 
-        # transform list of the output into [batch_size, p*output_dim]
-        # Combine the outputs of each branch into a JAX array
-        branch_x = jnp.reshape(jnp.array(branch_out), (-1, len(branch_out)))
+            # transform list of the output into [batch_size, p*output_dim]
+            # Combine the outputs of each branch into a JAX array
+            branch_x = jnp.reshape(jnp.array(branch_out), (-1, len(branch_out)))
+
+        # otherwise, we have a single branch
+        else:
+            for i, fs in enumerate(self.branch_layers[:-1]):
+                branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
+                branch_x = nn.activation.tanh(branch_x)
+            branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{i+1}", kernel_init=init)(branch_x)
+            # no output activation
+
+        # reshape the output
         # reshape from [batch_size, p*output_dim] to [batch_size, p, output_dim] if split_branch is True
         if self.split_branch:
             branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1] // self.output_dim, self.output_dim))

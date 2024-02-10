@@ -9,7 +9,7 @@ import time
 
 from data import load_data, generate_data
 from utils import train_error, update_model, loss_and_grad
-from models import UnstackedDeepONet, StackedDeepONet
+from models import DeepONet
 
 
 def main(args):
@@ -82,13 +82,13 @@ def main(args):
         branch_layers = [args.n_sensors*args.branch_input_features]+args.branch_layers+[1]
         # build model
         if args.split_branch:
+            n_branches = args.num_outputs * args.hidden_dim
             # If branches are split, we need to multiply the hidden_dim by the number of outputs
-            model = StackedDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk,
-                                    args.num_outputs, args.hidden_dim * args.num_outputs)
         else:
-            model = StackedDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk,
-                                    args.num_outputs, args.hidden_dim)
+            n_branches = args.num_outputs * args.hidden_dim
     else:
+        # number of branches is 1 for unstacked DeepONet
+        n_branches = 1
         # add input and output features to branch layers for unstacked DeepONet
         # if split_branch is True, the output features are split into n groups for n outputs
         if args.split_branch:
@@ -97,9 +97,11 @@ def main(args):
         else:
             branch_layers = ([args.n_sensors*args.branch_input_features] +
                              args.branch_layers + [args.hidden_dim])
-        # build model
-        model = UnstackedDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk,
-                                  args.num_outputs)
+
+    # build model
+    model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
+                     args.separable_trunk, args.num_outputs, n_branches)
+
     # Initialize parameters
     params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
 
@@ -180,16 +182,16 @@ if __name__ == '__main__':
     parser.add_argument('--n_sensors', type=int, default=100, help='number of sensors for branch network')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
+    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_false',
                         help='split branch outputs into n groups for n outputs')
-    # TODO: later change to default=False
 
     # Trunk settings
     parser.add_argument('--trunk_layers', type=int, nargs="+", default=40, help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=1, help='number of input features to trunk network')
-    parser.add_argument('--split_trunk', dest='split_trunk', default=True, action='store_false',
+    parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into n groups for n outputs')
-    # TODO: later change to default=False
+    parser.add_argument('--separable_trunk', dest='separable_trunk', default=False, action='store_true',
+                        help='use separable trunk network')
 
     # Training settings
     parser.add_argument('--seed', type=int, default=1337, help='random seed')
