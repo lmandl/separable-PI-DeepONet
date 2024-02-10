@@ -100,7 +100,7 @@ def main(args):
 
     # build model
     model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
-                     args.separable_trunk, args.num_outputs, n_branches)
+                     args.num_outputs, n_branches)
 
     # Initialize parameters
     params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
@@ -190,8 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--trunk_input_features', type=int, default=1, help='number of input features to trunk network')
     parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into n groups for n outputs')
-    parser.add_argument('--separable_trunk', dest='separable_trunk', default=False, action='store_true',
-                        help='use separable trunk network')
 
     # Training settings
     parser.add_argument('--seed', type=int, default=1337, help='random seed')

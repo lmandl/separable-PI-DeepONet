@@ -9,7 +9,6 @@ class DeepONet(nn.Module):
     split_branch: bool = False
     split_trunk: bool = False
     stacked: bool = False
-    separable: bool = False
     output_dim: int = 1
     n_branches: int = 1
 
