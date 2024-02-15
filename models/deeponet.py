@@ -11,6 +11,7 @@ class DeepONet(nn.Module):
     stacked: bool = False
     output_dim: int = 1
     n_branches: int = 1
+    # TODO: check vmap use for batch input
 
     @nn.compact
     def __call__(self, branch_x, trunk_x):

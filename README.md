@@ -1,22 +1,30 @@
 # DeepONets in JAX
 
-Code for DeepONets (https://arxiv.org/abs/1910.03193) in JaX 
+Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX 
 
 ## Roadmap
 
 ### Models
 
 #### Implemented
-* vanilla DeepONets with Bias for antiderivative example (data taken from DeepXDE examples)
+* vanilla DeepONets (stacked/unstacked) with bias for antiderivative example (data taken from DeepXDE examples)
+* extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
+  * split trunk and/or split branch
+* Burgers Equation PI (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
 
 #### Planned
-* extension to Biot's equation but only for 1 output (displacement u)
-* Extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
 
 #### Potential Extensions
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
-* Hard Enforcement of Dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
+* hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
+
+#### Future Projects / Minor TODOs
+* Remove purely data-driven system for easy use
+* Refactor training loop into PI_DeepONet class
+* Unify use of jax.vmap and jax.jit
+* Visualization
+* CheckPoint / Save & Load Weights
 
 ### Data/Equations
 Project is focused on later use of (physics-informed) DeepONets for solving problems in porous media. Current plans are:
@@ -43,7 +51,6 @@ Reference Codes:
 * https://github.com/lu-group/deeponet-fno
 * https://github.com/lululxvi/deepxde
 * https://github.com/katiana22/TL-DeepONet
-* https://github.com/kuangdai/deeponet-jax-bench
 
 ## Open Questions
 * stacked vs. unstacked DeepONets?
@@ -57,3 +64,4 @@ Reference Codes:
   * split branch in n groups, share trunk
   * share branch, split trunk in n groups
 * Multiple inputs to branch (e.g. two outputs (u,p) and two inputs (u, p)?)
+* batch_size or simply full_batch training?

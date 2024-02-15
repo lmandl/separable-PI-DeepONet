@@ -2,14 +2,11 @@ import argparse
 import shutil
 import os
 import jax
-import jax.numpy as jnp
 import optax
-from tqdm import trange
-import time
 
 from data import load_data, generate_data
-from utils import train_error, update_model, loss_and_grad
-from models import DeepONet
+from utils import train_loop
+from models import setup_deeponet
 
 
 def main(args):
@@ -51,62 +48,7 @@ def main(args):
         train_data, test_data = load_data(data_dir, eqn)
     print("Data assembled. Initializing model...")
 
-    # Overriding split_trunk and split_branch if num_outputs is 1
-    if args.num_outputs == 1:
-        args.split_trunk = False
-        args.split_branch = False
-
-    # Throw error if split_trunk and split_branch are both False and num_outputs is greater than 1
-    if not args.split_trunk and not args.split_branch and args.num_outputs > 1:
-        raise ValueError('split_trunk and split_branch cannot both be False when num_outputs > 1')
-
-    # Initialize model and params
-    # make sure trunk_layers and branch_layers are lists
-    args.trunk_layers = [args.trunk_layers] if isinstance(args.trunk_layers, int) else args.trunk_layers
-    args.branch_layers = [args.branch_layers] if isinstance(args.branch_layers, int) else args.branch_layers
-
-    # add input and output features to trunk and branch layers
-    # split trunk if split_trunk is True
-    if args.split_trunk:
-        trunk_layers = [args.trunk_input_features]+args.trunk_layers+[args.num_outputs*args.hidden_dim]
-    else:
-        trunk_layers = [args.trunk_input_features]+args.trunk_layers+[args.hidden_dim]
-
-    # Stacked or unstacked DeepONet
-    # dimensions for splits are calculated once here
-    # branch input features are multiplied by n_sensors as each input function is evaluated at n_sensors
-    # they are than stacked as vector
-    if args.stacked_do:
-        # add input and output features to branch layers for stacked DeepONet, which has one output feature
-        # if split_branch is True, the output features are split into n groups for n outputs but layer sizes are kept
-        branch_layers = [args.n_sensors*args.branch_input_features]+args.branch_layers+[1]
-        # build model
-        if args.split_branch:
-            n_branches = args.num_outputs * args.hidden_dim
-            # If branches are split, we need to multiply the hidden_dim by the number of outputs
-        else:
-            n_branches = args.num_outputs * args.hidden_dim
-    else:
-        # number of branches is 1 for unstacked DeepONet
-        n_branches = 1
-        # add input and output features to branch layers for unstacked DeepONet
-        # if split_branch is True, the output features are split into n groups for n outputs
-        if args.split_branch:
-            branch_layers = ([args.n_sensors*args.branch_input_features] +
-                             args.branch_layers + [args.num_outputs*args.hidden_dim])
-        else:
-            branch_layers = ([args.n_sensors*args.branch_input_features] +
-                             args.branch_layers + [args.hidden_dim])
-
-    # build model
-    model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
-                     args.num_outputs, n_branches)
-
-    # Initialize parameters
-    params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
-
-    # model function
-    model_fn = jax.jit(model.apply)
+    args, model, model_fn, params = setup_deeponet(args, key)
 
     # Log total params to config file
     args.total_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
@@ -122,26 +64,7 @@ def main(args):
     # TODO: Check Point
     # TODO: Visualization
 
-    for epoch in trange(args.epochs):
-
-        if epoch == 1:
-            # exclude compile time
-            start = time.time()
-
-        # Train model
-        loss, gradient = loss_and_grad(model_fn, params, train_data[0], train_data[1])
-        params, state = update_model(optimizer, gradient, params, opt_state)
-
-        # Log loss
-        if epoch % args.log_iter == 0:
-            error = train_error(model_fn, params, test_data[0], test_data[1])
-            log_file.write(f'Epoch: {epoch}, train loss: {loss}, test error: {error}\n')
-            print(f'Epoch: {epoch}/{args.epochs} --> train loss: {loss:.8f}, test error: {error:.8f}')
-
-    print("Training done")
-    # training done
-    runtime = time.time() - start
-    print(f'Runtime --> total: {runtime:.2f}sec ({(runtime / (args.epochs - 1) * 1000):.2f}ms/iter.)')
+    params = train_loop(model_fn, params, train_data, test_data, optimizer, opt_state, args, log_file)
 
 
 if __name__ == '__main__':
@@ -161,7 +84,7 @@ if __name__ == '__main__':
                                  "t_end": 1},
                         help='hyperparameters for equation setup, e.g. domain, ranges, boundary conditions, etc.')
     parser.add_argument('--num_outputs', type=int, default=1, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=20,
+    parser.add_argument('--hidden_dim', type=int, default=40,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
@@ -178,7 +101,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_samples', type=int, default=10000, help='number of test samples to generate')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=int, nargs="+", default=40, help='hidden branch layer sizes')
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=128, help='hidden branch layer sizes')
     parser.add_argument('--n_sensors', type=int, default=100, help='number of sensors for branch network')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features to branch network')
@@ -186,7 +109,7 @@ if __name__ == '__main__':
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=int, nargs="+", default=40, help='hidden trunk layer sizes')
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=128, help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=1, help='number of input features to trunk network')
     parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into n groups for n outputs')
