@@ -35,14 +35,14 @@ def mse_loss(y_true, y_pred):
 
 
 # single update function
-@partial(jax.jit, static_argnums=(0,))
+#@partial(jax.jit, static_argnums=(0,))
 def update_model(optim, gradient, params, state):
     updates, state = optim.update(gradient, state)
     params = optax.apply_updates(params, updates)
     return params, state
 
 
-@partial(jax.jit, static_argnums=(0,))
+#@partial(jax.jit, static_argnums=(0,))
 def loss_and_grad(model_fn, params, x, y):
     def loss_fn(params_loss):
         y_pred = model_fn(params_loss, x[0], x[1])

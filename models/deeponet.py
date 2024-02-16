@@ -1,17 +1,16 @@
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Sequence
+from typing import Tuple
 
 
 class DeepONet(nn.Module):
-    branch_layers: Sequence[int]
-    trunk_layers: Sequence[int]
+    branch_layers: Tuple[int]
+    trunk_layers: Tuple[int]
     split_branch: bool = False
     split_trunk: bool = False
     stacked: bool = False
     output_dim: int = 1
     n_branches: int = 1
-    # TODO: check vmap use for batch input
 
     @nn.compact
     def __call__(self, branch_x, trunk_x):

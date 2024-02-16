@@ -49,8 +49,11 @@ def setup_deeponet(args, key):
             branch_layers = ([args.n_sensors * args.branch_input_features] +
                              args.branch_layers + [args.num_outputs * args.hidden_dim])
         else:
-            branch_layers = ([args.n_sensors * args.branch_input_features] +
-                             args.branch_layers + [args.hidden_dim])
+            branch_layers = [args.n_sensors * args.branch_input_features] + args.branch_layers + [args.hidden_dim]
+
+    # Convert list to tuples
+    trunk_layers = tuple(trunk_layers)
+    branch_layers = tuple(branch_layers)
 
     # build model
     model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
@@ -61,5 +64,5 @@ def setup_deeponet(args, key):
 
     # model function
     model_fn = jax.jit(model.apply)
-
+    #model_fn = model.apply
     return args, model, model_fn, params
