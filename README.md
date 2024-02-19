@@ -18,6 +18,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 #### Potential Extensions
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
+* modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 
 #### Future Projects / Minor TODOs
 * Remove purely data-driven system for easy use
@@ -25,6 +26,8 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * Unify use of jax.vmap and jax.jit
 * Visualization
 * CheckPoint / Save & Load Weights
+* Input Shape in Flax is inferred from last axis: Does not need to be specified beforehand,
+* adjust network size accordingly
 
 ### Data/Equations
 Project is focused on later use of (physics-informed) DeepONets for solving problems in porous media. Current plans are:

@@ -30,26 +30,14 @@ def setup_deeponet(args, key):
     # dimensions for splits are calculated once here
     # branch input features are multiplied by n_sensors as each input function is evaluated at n_sensors
     # they are than stacked as vector
-    if args.stacked_do:
-        # add input and output features to branch layers for stacked DeepONet, which has one output feature
-        # if split_branch is True, the output features are split into n groups for n outputs but layer sizes are kept
-        branch_layers = [args.n_sensors * args.branch_input_features] + args.branch_layers + [1]
-        # build model
-        if args.split_branch:
-            n_branches = args.num_outputs * args.hidden_dim
-            # If branches are split, we need to multiply the hidden_dim by the number of outputs
-        else:
-            n_branches = args.num_outputs * args.hidden_dim
+    # add input and output features to branch layers for stacked/unstacked DeepONet
+    # if split_branch is True, the output features are split into n groups for n outputs but layer sizes are kept
+    # last layer size defines number of branches for stacked DeepONets
+    if args.split_branch:
+        branch_layers = ([args.n_sensors * args.branch_input_features] +
+                         args.branch_layers + [args.num_outputs * args.hidden_dim])
     else:
-        # number of branches is 1 for unstacked DeepONet
-        n_branches = 1
-        # add input and output features to branch layers for unstacked DeepONet
-        # if split_branch is True, the output features are split into n groups for n outputs
-        if args.split_branch:
-            branch_layers = ([args.n_sensors * args.branch_input_features] +
-                             args.branch_layers + [args.num_outputs * args.hidden_dim])
-        else:
-            branch_layers = [args.n_sensors * args.branch_input_features] + args.branch_layers + [args.hidden_dim]
+        branch_layers = [args.n_sensors * args.branch_input_features] + args.branch_layers + [args.hidden_dim]
 
     # Convert list to tuples
     trunk_layers = tuple(trunk_layers)
@@ -57,12 +45,12 @@ def setup_deeponet(args, key):
 
     # build model
     model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
-                     args.num_outputs, n_branches)
+                     args.num_outputs)
 
     # Initialize parameters
     params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
 
     # model function
     model_fn = jax.jit(model.apply)
-    #model_fn = model.apply
+    # model_fn = model.apply
     return args, model, model_fn, params
