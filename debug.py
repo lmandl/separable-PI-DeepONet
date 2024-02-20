@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from models import DeepONet
+from models import DeepONet, SeparableDeepONet
 import jax
 import optax
 from tqdm import trange
@@ -16,7 +16,7 @@ if __name__ == '__main__':
     hidden_dim = 5
     stacked_do = False
     separable_trunk = True
-    r = 5
+    r = 7
 
     # Overriding split_trunk and split_branch if num_outputs is 1
     if output_dim == 1:
@@ -51,8 +51,10 @@ if __name__ == '__main__':
     trunk_layers = tuple(trunk_layers)
     branch_layers = tuple(branch_layers)
 
-    model = DeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
-                     output_dim)
+    #model = DeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
+    #                 output_dim)
+    model = SeparableDeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
+                              output_dim, r)
 
     # Set random seed and key
     key = jax.random.PRNGKey(1337)
