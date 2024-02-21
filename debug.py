@@ -15,7 +15,7 @@ if __name__ == '__main__':
     output_dim = 2
     hidden_dim = 5
     stacked_do = False
-    separable_trunk = True
+    separable = True
     r = 7
 
     # Overriding split_trunk and split_branch if num_outputs is 1
@@ -51,11 +51,12 @@ if __name__ == '__main__':
     trunk_layers = tuple(trunk_layers)
     branch_layers = tuple(branch_layers)
 
-    #model = DeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
-    #                 output_dim)
-    model = SeparableDeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
-                              output_dim, r)
-
+    if not separable:
+        model = DeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
+                         output_dim)
+    else:
+        model = SeparableDeepONet(branch_layers, trunk_layers, split_branch, split_trunk, stacked_do,
+                                  output_dim, r)
     # Set random seed and key
     key = jax.random.PRNGKey(1337)
 
@@ -63,19 +64,23 @@ if __name__ == '__main__':
     key, subkey = jax.random.split(key)
 
     # Initialize parameters
-    params = model.init(subkey, jnp.ones(input_dim_branch), jnp.ones(input_dim_trunk))
+    params = model.init(subkey, jnp.ones(input_dim_branch), jnp.ones(shape=(1, input_dim_trunk)))
     print(params)
 
     # Split key
     key, subkey = jax.random.split(key)
 
     # Generate inputs
+
     branch_input = jax.random.uniform(key, shape=(batch_size, input_dim_branch))
     trunk_input = jax.random.uniform(key, shape=(batch_size, input_dim_trunk))
+    if not separable:
+        fake_out = jax.random.uniform(key, shape=(batch_size, output_dim))
+    else:
+        fake_out = jax.random.uniform(key, shape=tuple([batch_size]*input_dim_trunk+[output_dim]))
 
     out = model.apply(params, branch_input, trunk_input)
     print(out)
-    fake_out = jax.random.uniform(key, shape=out.shape)
 
     # Fake train the model
     # Define optimizer with optax (ADAM)
@@ -85,12 +90,12 @@ if __name__ == '__main__':
     # List of TODOs
     # TODO: Check Point
     # TODO: Visualization
-    model_fn = model.apply
+    model_fn = jax.jit(model.apply)
 
     # Note:: train and test data has form [[branch_input, trunk_input], output]
     train_data = ((branch_input, trunk_input), fake_out)
 
-    for epoch in trange(100):
+    for epoch in trange(1000):
 
         # Train model
         loss, gradient = loss_and_grad(model_fn, params, train_data[0], train_data[1])

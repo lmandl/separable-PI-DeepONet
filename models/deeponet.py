@@ -17,6 +17,7 @@ class DeepONet(nn.Module):
         init = nn.initializers.glorot_normal()
 
         # Make sure the input is 2D (also during init)
+        # TODO: DO init with appropriate shape i.e. [1, input_dim]
         if len(branch_x.shape) == 1:
             branch_x = jnp.reshape(branch_x, (1, -1))
         if len(trunk_x.shape) == 1:
@@ -97,11 +98,15 @@ class SeparableDeepONet(nn.Module):
 
         init = nn.initializers.glorot_normal()
 
-        # Make sure the input is 2D (also during init)
+        # Make sure the branch input has shape [batch_size, input_dim]
+        # TODO: DO init with appropriate shape i.e. [1, input_dim]
         if len(branch_x.shape) == 1:
+            # Reshape for init
             branch_x = jnp.reshape(branch_x, (1, -1))
-        if len(trunk_x.shape) == 1:
-            trunk_x = jnp.reshape(trunk_x, (1, -1))
+
+        # Trunk input has shape input_dim*[batch_size]
+        # Split along the last axis so that every input dim is passed through a separate trunk
+        trunk_x = jnp.split(trunk_x, trunk_x.shape[1], axis=1)
 
         # Branch network
         # if stacked, then we have multiple branches
@@ -143,9 +148,6 @@ class SeparableDeepONet(nn.Module):
         # see also https://github.com/stnamjef/SPINN
         outputs = []
 
-        dim = self.trunk_layers[0]
-        # split inputs along the last axis so that every input dim is passed through a separate trunk
-        trunk_x = jnp.split(trunk_x, dim, axis=-1)
         for j, x_i in enumerate(trunk_x):
             # for each output dimension, we have a separate trunk
             for i, fs in enumerate(self.trunk_layers[1:-1]):
@@ -197,12 +199,15 @@ def output_einsum_sep(list_of_outputs):
 
     # Create einsum arguments (r=0, output_dim=1, input_dim_ct=2,3,..
     einsum_args = [[elem, [i + 2, 0, 1]] for i, elem in enumerate(list_of_outputs)]
+
     # Flatten the list of lists into a single list
     einsum_args = [item for sublist in einsum_args for item in sublist]
+
     # Create output dimension [batch_size]*input_dim, output_dim
     output_dim = [i + 2 for i in range(i_dim)] + [1]
+
     # Unpack the list of lists into separate arguments for einsum
     # We use einsum in the alternative way: einsum(op0, sublist0, op1, sublist1, ..., [sublistout])
     result = jnp.einsum(*einsum_args, output_dim)
-    print(result)
+
     return result
