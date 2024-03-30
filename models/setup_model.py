@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import jax
 
-from .deeponet import DeepONet
+from .deeponet import DeepONet, SeparableDeepONet
 
 
 def setup_deeponet(args, key):
@@ -10,9 +10,15 @@ def setup_deeponet(args, key):
         args.split_trunk = False
         args.split_branch = False
 
-    # Throw error if split_trunk and split_branch are both False and num_outputs is greater than 1
-    if not args.split_trunk and not args.split_branch and args.num_outputs > 1:
-        raise ValueError('split_trunk and split_branch cannot both be False when num_outputs > 1')
+    # if split_trunk is True and separable_trunk is false
+    # then the hidden_dim is multiplied by the output_dim
+    # if split_trunk is false and separable_trunk is false
+    # then the trunk output is the same as the hidden_dim
+    # if split_trunk is false and separable_trunk is true
+    # then the output of the separable_trunk is hidden_dim*r
+    # if split_trunk is true and separable_trunk is true
+    # then the output of the separable_trunk is hidden_dim*r*output_dim
+    # the multiplication with r is done in the deeponet class
 
     # Initialize model and params
     # make sure trunk_layers and branch_layers are lists
@@ -27,12 +33,9 @@ def setup_deeponet(args, key):
         trunk_layers = [args.trunk_input_features] + args.trunk_layers + [args.hidden_dim]
 
     # Stacked or unstacked DeepONet
-    # dimensions for splits are calculated once here
-    # branch input features are multiplied by n_sensors as each input function is evaluated at n_sensors
-    # they are than stacked as vector
-    # add input and output features to branch layers for stacked/unstacked DeepONet
-    # if split_branch is True, the output features are split into n groups for n outputs but layer sizes are kept
-    # last layer size defines number of branches for stacked DeepONets
+    # dimensions for splits are calculated once here before creating the model
+    # add input and output features to branch layers for unstacked DeepONet
+    # if split_branch is True, the output features are split into n groups for n outputs
     if args.split_branch:
         branch_layers = ([args.n_sensors * args.branch_input_features] +
                          args.branch_layers + [args.num_outputs * args.hidden_dim])
@@ -44,13 +47,18 @@ def setup_deeponet(args, key):
     branch_layers = tuple(branch_layers)
 
     # build model
-    model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
-                     args.num_outputs)
+    if not args.separable:
+        model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
+                         args.num_outputs)
+    else:
+        model = SeparableDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
+                                  args.num_outputs, args.r)
 
     # Initialize parameters
-    params = model.init(key, jnp.ones(args.n_sensors), jnp.ones(args.trunk_input_features))
+    params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
+                        jnp.ones(shape=(1, args.trunk_input_features)))
 
     # model function
     model_fn = jax.jit(model.apply)
-    # model_fn = model.apply
+
     return args, model, model_fn, params

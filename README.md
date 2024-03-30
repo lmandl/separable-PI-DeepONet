@@ -7,8 +7,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 ### Models
 
 #### Implemented
-* vanilla DeepONets (stacked/unstacked) with bias for antiderivative example (data taken from DeepXDE examples)
-* extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
+* vanilla DeepONets (stacked/unstacked) with bias and extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
   * split trunk and/or split branch
 * Burgers Equation PI (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
 

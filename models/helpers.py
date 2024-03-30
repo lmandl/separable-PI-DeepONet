@@ -16,39 +16,39 @@ def relative_l2(u_gt, u):
     return rel_l2
 
 
-def mse(u, u_gt):
+def mse(y_true, y_pred):
     """
     Computes the mean squared error between u and u_gt
-    """
-    # if mse is called with a list of arrays, we stack them
-    if isinstance(u, list) and isinstance(u_gt, list):
-        u = jnp.dstack([jnp.array(elem) for elem in u])
-        u_gt = jnp.dstack([jnp.array(elem) for elem in u_gt])
-    return jnp.mean((u - u_gt) ** 2)
-
-
-def mse_loss(y_true, y_pred):
-    """
-    short version for call in loss functions
     """
     return jnp.mean((y_true - y_pred) ** 2)
 
 
+@partial(jax.jit, static_argnums=(0,))
+def apply_net(model_fn, params, branch_input, *trunk_in):
+    # Define forward pass that takes series of trunk inputs
+    trunk_input = jnp.stack(trunk_in, axis=-1)
+    out = model_fn(params, branch_input, trunk_input)
+    # Reshape to vector for single output for easier gradient computation
+    if out.shape[1]==1:
+        out = jnp.squeeze(out, axis=1)
+    return out
+
+
 # single update function
-#@partial(jax.jit, static_argnums=(0,))
+@partial(jax.jit, static_argnums=(0,))
 def update_model(optim, gradient, params, state):
     updates, state = optim.update(gradient, state)
     params = optax.apply_updates(params, updates)
     return params, state
 
 
-#@partial(jax.jit, static_argnums=(0,))
-def loss_and_grad(model_fn, params, x, y):
-    def loss_fn(params_loss):
-        y_pred = model_fn(params_loss, x[0], x[1])
-        mse_val = mse_loss(y, y_pred)
-        return mse_val
-    return jax.value_and_grad(loss_fn)(params)
+@partial(jax.jit, static_argnums=(0, 1, 2))
+def step(optimizer, loss_fn, model_fn, opt_state, params_step, ics_batch, bcs_batch, res_batch):
+    loss, gradient = jax.value_and_grad(loss_fn, argnums=1)(model_fn, params_step, ics_batch, bcs_batch, res_batch)
+    updates, opt_state = optimizer.update(gradient, opt_state)
+    params_step = optax.apply_updates(params_step, updates)
+
+    return loss, params_step, opt_state
 
 
 @partial(jax.jit, static_argnums=(0,))
