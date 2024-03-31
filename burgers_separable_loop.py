@@ -10,7 +10,7 @@ import argparse
 
 from models import setup_deeponet
 from models import relative_l2, mse, train_error
-from models import apply_net, step, update_model
+from models import apply_net, step, update_model, hvp_fwdfwd
 
 
 # Data Generator
@@ -103,7 +103,7 @@ def generate_one_test_data(idx, usol, p=101):
 # Define ds/dx
 def s_x_net(model_fn, params, u, t, x):
     v_x = jnp.ones(x.shape)
-    s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
+    s_x = jax.jvp(lambda x: apply_net(model_fn, params, u, t, x), (x,), (v_x,))
     return s_x
 
 
@@ -130,8 +130,14 @@ def loss_bcs(model_fn, params, ics_batch):
     s_bc1_pred = apply_net(model_fn, params, u, y[:, 0], y[:, 1])
     s_bc2_pred = apply_net(model_fn, params, u, y[:, 2], y[:, 3])
 
-    s_x_bc1_pred = s_x_net(model_fn, params, u, y[:, 0], y[:, 1])
-    s_x_bc2_pred = s_x_net(model_fn, params, u, y[:, 2], y[:, 3])
+    # Assert shapes here for easier gradient computation
+    x_bc_1 = jnp.reshape(y[:,0], (-1, 1))
+    t_bc_1 = jnp.reshape(y[:,1], (-1, 1))
+    x_bc_2 = jnp.reshape(y[:,2], (-1, 1))
+    t_bc_2 = jnp.reshape(y[:,3], (-1, 1))
+
+    s_x_bc1_pred = s_x_net(model_fn, params, u, x_bc_1, t_bc_1)
+    s_x_bc2_pred = s_x_net(model_fn, params, u, x_bc_2, t_bc_2)
 
     # Compute loss
     loss_s_bc = mse(s_bc1_pred, s_bc2_pred)
@@ -151,8 +157,10 @@ def loss_res(model_fn, params, batch):
 
     # Residual PDE
     s = apply_net(model_fn, params, u, t, x)
-    v_x = jnp.ones(x.shape)
-    v_t = jnp.ones(t.shape)
+    v_x = jnp.atleast_2d(jnp.ones(x.shape)).T
+    v_t = jnp.atleast_2d(jnp.ones(t.shape)).T
+
+    #TODO: Forward mode AD
 
     s_t = jax.vjp(lambda t: apply_net(model_fn, params, u, t, x), t)[1](v_t)[0]
     s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
@@ -197,7 +205,12 @@ def main_routine(args):
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
                                                       in_axes=(0, None))
                                              (u0_train, args.p_ics_train))
-    u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
+    # ICs data at args.p_ics_train locations
+    # TODO: Adapt data generation and datasets for easier use during training
+    t_0 = jnp.zeros((1,1)) # time will be always zero
+    x_0 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
+
+
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
 
@@ -222,9 +235,10 @@ def main_routine(args):
     s_res_train = s_res_train.reshape(args.n_train * args.p_res_train, -1)
 
     # Create data generators
-    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, args.batch_size, keys[2])
-    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, args.batch_size, keys[3])
-    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, args.batch_size, keys[4])
+    batch_size = 100
+    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, batch_size, keys[2])
+    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, batch_size, keys[3])
+    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, batch_size, keys[4])
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[5])
@@ -250,7 +264,7 @@ def main_routine(args):
         loss, params_step, opt_state = step(optimizer, loss_fn, model_fn, opt_state,
                                             params, ics_batch, bcs_batch, res_batch)
 
-        if it % args.log_iter == 0:
+        if it % 100 == 0:
             # Compute losses
             loss_ics_value = loss_ics(model_fn, params, ics_batch)
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
@@ -275,7 +289,7 @@ if __name__ == "__main__":
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
-    parser.add_argument('--separable', dest='separable', default=False, action='store_true',
+    parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
     parser.add_argument('--r', type=int, default=128, help='hidden tensor dimension in separable DeepONets')
 
@@ -314,7 +328,6 @@ if __name__ == "__main__":
                         help='number of locations for evaluating the boundary condition')
     parser.add_argument('--p_res_train', type=int, default=2500,
                         help='number of locations for evaluating the PDE residual')
-    parser.add_argument('--batch_size', type=int, default=100, help='batch size')
 
     args_in = parser.parse_args()
 

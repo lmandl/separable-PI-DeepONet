@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import jax
+from jax import jvp, vjp
 import optax
 from functools import partial
 
@@ -26,11 +27,12 @@ def mse(y_true, y_pred):
 @partial(jax.jit, static_argnums=(0,))
 def apply_net(model_fn, params, branch_input, *trunk_in):
     # Define forward pass that takes series of trunk inputs
+    # if entries in trunk_in are squeezable, squeeze them
+    trunk_in = [jnp.squeeze(entry) if entry is not list or tuple else entry for entry in trunk_in]
     trunk_input = jnp.stack(trunk_in, axis=-1)
     out = model_fn(params, branch_input, trunk_input)
     # Reshape to vector for single output for easier gradient computation
-    if out.shape[1]==1:
-        out = jnp.squeeze(out, axis=1)
+    out = jnp.squeeze(out)
     return out
 
 
@@ -56,3 +58,15 @@ def train_error(model_fn, params, x, y):
     y_pred = model_fn(params, x[0], x[1])
     rel_l2 = relative_l2(y, y_pred)
     return rel_l2
+
+
+# Following functions taken from https://github.com/stnamjef/SPINN
+
+# forward over forward
+def hvp_fwdfwd(f, primals, tangents, return_primals=False):
+    g = lambda primals: jvp(f, (primals,), tangents)[1]
+    primals_out, tangents_out = jvp(g, primals, tangents)
+    if return_primals:
+        return primals_out, tangents_out
+    else:
+        return tangents_out

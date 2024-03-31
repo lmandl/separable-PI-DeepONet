@@ -12,6 +12,8 @@ from models import setup_deeponet
 from models import relative_l2, mse, train_error
 from models import apply_net, step, update_model
 
+# This code is the same as "burgers.py" but adapted to a slower data generation procedure
+# This is to allow for easier transfer to the separable approach
 
 # Data Generator
 class DataGenerator(data.Dataset):
@@ -40,65 +42,6 @@ class DataGenerator(data.Dataset):
         inputs = (u, y)
         outputs = s
         return inputs, outputs
-
-
-# Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(u0, p=101):
-    t_0 = jnp.zeros((p, 1))
-    x_0 = jnp.linspace(0, 1, p)[:, None]
-
-    y = jnp.hstack([t_0, x_0])
-    u = jnp.tile(u0, (p, 1))
-    s = u0
-
-    return u, y, s
-
-
-# Generate bcs training data corresponding to one input sample
-def generate_one_bcs_training_data(key, u0, p=100):
-    t_bc = jax.random.uniform(key, (p, 1))
-    x_bc1 = jnp.zeros((p, 1))
-    x_bc2 = jnp.ones((p, 1))
-
-    y1 = jnp.hstack([t_bc, x_bc1])  # shape = (P, 2)
-    y2 = jnp.hstack([t_bc, x_bc2])  # shape = (P, 2)
-
-    u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([y1, y2])  # shape = (P, 4)
-    s = jnp.zeros((p, 1))
-
-    return u, y, s
-
-
-# Generate res training data corresponding to one input sample
-def generate_one_res_training_data(key, u0, p=1000):
-    subkeys = jax.random.split(key, 2)
-
-    t_res = jax.random.uniform(subkeys[0], (p, 1))
-    x_res = jax.random.uniform(subkeys[1], (p, 1))
-
-    u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([t_res, x_res])
-    s = jnp.zeros((p, 1))
-
-    return u, y, s
-
-
-# Generate test data corresponding to one input sample
-def generate_one_test_data(idx, usol, p=101):
-    u = usol[idx]
-    u0 = u[0, :]
-
-    t = jnp.linspace(0, 1, p)
-    x = jnp.linspace(0, 1, p)
-    T, X = jnp.meshgrid(t, x)
-
-    s = u.T.flatten()
-    u = jnp.tile(u0, (p ** 2, 1))
-    y = jnp.hstack([T.flatten()[:, None], X.flatten()[:, None]])
-
-    return u, y, s
-
 
 # Define ds/dx
 def s_x_net(model_fn, params, u, t, x):
@@ -192,30 +135,96 @@ def main_routine(args):
     key = jax.random.PRNGKey(seed)
     keys = jax.random.split(key, 6)
 
+    # Note: Data generation procedure would be quicker using vmap
+    # However, comparison / adaptation to separable approach is easier with loop
     # ICs data
+    # Init empty arrays for storage
+    u_ics_train = []
+    y_ics_train = []
+    s_ics_train = []
+    # Loop over initial functions
+    for u_0 in u0_train:
+        u = jnp.tile(u_0, (args.p_ics_train, 1))
+        u_ics_train.append(u)
 
-    u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
-                                                      in_axes=(0, None))
-                                             (u0_train, args.p_ics_train))
+        t_0 = jnp.zeros((args.p_ics_train, 1))
+        x_0 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
+        y = jnp.hstack([t_0, x_0])
+        y_ics_train.append(y)
+
+        s = u_0
+        s_ics_train.append(s)
+
+    # Make array
+    u_ics_train = jnp.array(u_ics_train)
+    y_ics_train = jnp.array(y_ics_train)
+    s_ics_train = jnp.array(s_ics_train)
+
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
 
     # BCs data
+    # Init empty arrays for storage
+    u_bcs_train = []
+    y_bcs_train = []
+    s_bcs_train = []
+    # generate keys for BCs
     bc_keys = jax.random.split(keys[0], args.n_train)
-    u_bcs_train, y_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (bc_keys, u0_train, args.p_bcs_train))
+    # Loop over BCs
+    for key_i, u0_i in zip(bc_keys, u0_train):
+        t_bc = jax.random.uniform(key_i, (args.p_bcs_train, 1))
+        x_bc1 = jnp.zeros((args.p_bcs_train, 1))
+        x_bc2 = jnp.ones((args.p_bcs_train, 1))
+
+        y1 = jnp.hstack([t_bc, x_bc1])  # shape = (P, 2)
+        y2 = jnp.hstack([t_bc, x_bc2])  # shape = (P, 2)
+
+        u = jnp.tile(u0_i, (args.p_bcs_train, 1))
+        u_bcs_train.append(u)
+
+        y = jnp.hstack([y1, y2])  # shape = (P, 4)
+        y_bcs_train.append(y)
+
+        s = jnp.zeros((args.p_bcs_train, 1))
+        s_bcs_train.append(s)
+
+    # Make array
+    u_bcs_train = jnp.array(u_bcs_train)
+    y_bcs_train = jnp.array(y_bcs_train)
+    s_bcs_train = jnp.array(s_bcs_train)
 
     u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
     y_bcs_train = y_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
     s_bcs_train = s_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
 
     # Residual data
+    # Init empty arrays for storage
+    u_res_train = []
+    y_res_train = []
+    s_res_train = []
+
+    # generate keys for Residuals
     res_keys = jax.random.split(keys[1], args.n_train)
-    u_res_train, y_res_train, s_res_train = (jax.vmap(generate_one_res_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (res_keys, u0_train, args.p_res_train))
+    # Loop over Residuals
+    for key_i, u0_i in zip(res_keys, u0_train):
+        subkeys = jax.random.split(key_i, 2)
+
+        t_res = jax.random.uniform(subkeys[0], (args.p_res_train, 1))
+        x_res = jax.random.uniform(subkeys[1], (args.p_res_train, 1))
+        y = jnp.hstack([t_res, x_res])
+        y_res_train.append(y)
+
+        u = jnp.tile(u0_i, (args.p_res_train, 1))
+        u_res_train.append(u)
+
+        s = jnp.zeros((args.p_res_train, 1))
+        s_res_train.append(s)
+
+    # Make array
+    u_res_train = jnp.array(u_res_train)
+    y_res_train = jnp.array(y_res_train)
+    s_res_train = jnp.array(s_res_train)
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
     y_res_train = y_res_train.reshape(args.n_train * args.p_res_train, -1)
@@ -245,7 +254,6 @@ def main_routine(args):
         ics_batch = next(ics_data)
         bcs_batch = next(bcs_data)
         res_batch = next(res_data)
-
         # Do Step
         loss, params_step, opt_state = step(optimizer, loss_fn, model_fn, opt_state,
                                             params, ics_batch, bcs_batch, res_batch)
