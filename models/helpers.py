@@ -26,15 +26,22 @@ def mse(y_true, y_pred):
 
 @partial(jax.jit, static_argnums=(0,))
 def apply_net(model_fn, params, branch_input, *trunk_in):
-    # Define forward pass that takes series of trunk inputs
-    # if entries in trunk_in are squeezable, squeeze them
-    trunk_in = [jnp.squeeze(entry) if entry is not list or tuple else entry for entry in trunk_in]
+    # Define forward pass for normal DeepOnet that takes series of trunk inputs and stacks them
     trunk_input = jnp.stack(trunk_in, axis=-1)
     out = model_fn(params, branch_input, trunk_input)
     # Reshape to vector for single output for easier gradient computation
-    out = jnp.squeeze(out)
+    if out.shape[1]==1:
+        out = jnp.squeeze(out, axis=1)
     return out
 
+@partial(jax.jit, static_argnums=(0, ))
+def apply_net_sep(model_fn, params, branch_input, *trunk_in):
+    # Define forward pass for separable DeepONet that takes series of trunk inputs
+    out = model_fn(params, branch_input, *trunk_in)
+    # Reshape to vector for single output for easier gradient computation
+    out = jnp.squeeze(out)
+    return out
+    # TODO: Combine apply_net and apply_net_sep into one function
 
 # single update function
 @partial(jax.jit, static_argnums=(0,))

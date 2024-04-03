@@ -10,9 +10,16 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * vanilla DeepONets (stacked/unstacked) with bias and extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
   * split trunk and/or split branch
 * Burgers Equation PI (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
-
-#### Planned
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
+
+#### Current TODOs
+* Getting Burgers Equation working separable DeepONets
+* Forward mode AD in separable PI DeepONets
+* Consistency using x and t in Burgers Example
+
+#### Upcoming Tasks
+* Biot's equation of consolidation in 1D
+* 
 
 #### Potential Extensions
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)

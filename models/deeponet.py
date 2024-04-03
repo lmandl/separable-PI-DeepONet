@@ -16,13 +16,6 @@ class DeepONet(nn.Module):
 
         init = nn.initializers.glorot_normal()
 
-        # Make sure the input is 2D (also during init)
-        # TODO: DO init with appropriate shape i.e. [1, input_dim]
-        if len(branch_x.shape) == 1:
-            branch_x = jnp.reshape(branch_x, (1, -1))
-        if len(trunk_x.shape) == 1:
-            trunk_x = jnp.reshape(trunk_x, (1, -1))
-
         # Branch network
         # if stacked, then we have multiple branches
         # Branch networks
@@ -91,22 +84,17 @@ class SeparableDeepONet(nn.Module):
     stacked: bool = False
     output_dim: int = 1
     r: int = 128
-    # TODO: Check if it makes sense to switch setup procedure that builds layer sizes in a more comprehensive manner
+
+    # TODO: split_branc, split_trunk and output_dim are not used/tested in the current implementation
 
     @nn.compact
-    def __call__(self, branch_x, trunk_x):
+    def __call__(self, branch_x, *trunk_x):
 
         init = nn.initializers.glorot_normal()
 
-        # Make sure the branch input has shape [batch_size, input_dim]
-        # TODO: DO init with appropriate shape i.e. [1, input_dim]
-        if len(branch_x.shape) == 1:
-            # Reshape for init
-            branch_x = jnp.reshape(branch_x, (1, -1))
-
-        # Trunk input has shape input_dim*[batch_size]
-        # Split along the last axis so that every input dim is passed through a separate trunk
-        trunk_x = jnp.split(trunk_x, trunk_x.shape[1], axis=1)
+        # Trunk input has shape [input_1, input_2, ..., input_dim]
+        # where each input has shape [N_i, 1] and N_i is the number of samples in the i-th input
+        trunk_x = [*trunk_x]
 
         # Branch network
         # if stacked, then we have multiple branches
@@ -149,21 +137,20 @@ class SeparableDeepONet(nn.Module):
         outputs = []
 
         for j, x_i in enumerate(trunk_x):
-            # for each output dimension, we have a separate trunk
+            # for each input dimension, we have a separate trunk
             for i, fs in enumerate(self.trunk_layers[1:-1]):
                 x_i = nn.Dense(fs, kernel_init=init, name=f"trunk_{i}_{j}")(x_i)
                 x_i = nn.activation.tanh(x_i)
             x_i = nn.Dense(self.trunk_layers[-1]*self.r, name=f"trunk_{i+1}_{j}", kernel_init=init)(x_i)
             x_i = nn.activation.tanh(x_i)
-            # Do we need activation of last layer? SPINN does not use it
+            # Note: SPINN does not use output activation
             # reshape the output
 
             if self.split_trunk:
-                # reshape from [batch_size, r*p*output_dim] to [batch_size, r, p, output_dim]
-                x_i = jnp.reshape(x_i, (-1, self.r, x_i.shape[1] // (self.r*self.output_dim), self.output_dim))
+                raise NotImplementedError
             else:
-                # reshape from [batch_size, r*p] to [batch_size, r, p, 1]
-                x_i = jnp.reshape(x_i, (-1, self.r, x_i.shape[1] // self.r, 1))
+                # Note: batch sizes are not necessarily the same for each input dimension
+                x_i = jnp.reshape(x_i, (-1, self.r, self.trunk_layers[-1], 1))
 
             outputs += [x_i]
 

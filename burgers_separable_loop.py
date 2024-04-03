@@ -10,14 +10,17 @@ import argparse
 
 from models import setup_deeponet
 from models import relative_l2, mse, train_error
-from models import apply_net, step, update_model, hvp_fwdfwd
+from models import step, update_model, hvp_fwdfwd
+from models import apply_net_sep as apply_net
 
 
 # Data Generator
-class DataGenerator(data.Dataset):
-    def __init__(self, u, y, s, batch_size, gen_key):
+class DataGeneratorIC(data.Dataset):
+    # IC has same t for all samples in y
+    def __init__(self, u, x, t, s, batch_size, gen_key):
         self.u = u
-        self.y = y
+        self.x = x
+        self.t = t
         self.s = s
         self.N = u.shape[0]
         self.batch_size = batch_size
@@ -34,86 +37,89 @@ class DataGenerator(data.Dataset):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
         s = self.s[idx, :]
-        y = self.y[idx, :]
+        x = self.x[idx, :]
+        t = self.t
         u = self.u[idx, :]
         # Construct batch
-        inputs = (u, y)
+        inputs = (u, (t, x))
         outputs = s
         return inputs, outputs
 
+class DataGeneratorBC(data.Dataset):
+    # IC has same t for all samples in y
+    def __init__(self, u, x, t, s, batch_size, gen_key):
+        self.u = u
+        self.x = x
+        self.t = t
+        self.s = s
+        self.N = u.shape[0]
+        self.batch_size = batch_size
+        self.key = gen_key
 
-# Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(u0, p=101):
-    t_0 = jnp.zeros((p, 1))
-    x_0 = jnp.linspace(0, 1, p)[:, None]
+    def __getitem__(self, index):
+        """Generate one batch of data"""
+        self.key, subkey = jax.random.split(self.key)
+        inputs, outputs = self.__data_generation(subkey)
+        return inputs, outputs
 
-    y = jnp.hstack([t_0, x_0])
-    u = jnp.tile(u0, (p, 1))
-    s = u0
+    @partial(jax.jit, static_argnums=(0,))
+    def __data_generation(self, key_i):
+        """Generates data containing batch_size samples"""
+        idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
+        s = self.s[idx, :]
+        x = self.x
+        t = self.t[idx, :]
+        u = self.u[idx, :]
+        # Construct batch
+        inputs = (u, (t, x))
+        outputs = s
+        return inputs, outputs
 
-    return u, y, s
+# Data Generator
+class DataGeneratorRes(data.Dataset):
 
+    def __init__(self, u, x, t, s, batch_size, gen_key):
+        self.u = u
+        self.x = x
+        self.t = t
+        self.s = s
+        self.N = u.shape[0]
+        self.batch_size = batch_size
+        self.key = gen_key
 
-# Generate bcs training data corresponding to one input sample
-def generate_one_bcs_training_data(key, u0, p=100):
-    t_bc = jax.random.uniform(key, (p, 1))
-    x_bc1 = jnp.zeros((p, 1))
-    x_bc2 = jnp.ones((p, 1))
+    def __getitem__(self, index):
+        """Generate one batch of data"""
+        self.key, subkey = jax.random.split(self.key)
+        inputs, outputs = self.__data_generation(subkey)
+        return inputs, outputs
 
-    y1 = jnp.hstack([t_bc, x_bc1])  # shape = (P, 2)
-    y2 = jnp.hstack([t_bc, x_bc2])  # shape = (P, 2)
-
-    u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([y1, y2])  # shape = (P, 4)
-    s = jnp.zeros((p, 1))
-
-    return u, y, s
-
-
-# Generate res training data corresponding to one input sample
-def generate_one_res_training_data(key, u0, p=1000):
-    subkeys = jax.random.split(key, 2)
-
-    t_res = jax.random.uniform(subkeys[0], (p, 1))
-    x_res = jax.random.uniform(subkeys[1], (p, 1))
-
-    u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([t_res, x_res])
-    s = jnp.zeros((p, 1))
-
-    return u, y, s
-
-
-# Generate test data corresponding to one input sample
-def generate_one_test_data(idx, usol, p=101):
-    u = usol[idx]
-    u0 = u[0, :]
-
-    t = jnp.linspace(0, 1, p)
-    x = jnp.linspace(0, 1, p)
-    T, X = jnp.meshgrid(t, x)
-
-    s = u.T.flatten()
-    u = jnp.tile(u0, (p ** 2, 1))
-    y = jnp.hstack([T.flatten()[:, None], X.flatten()[:, None]])
-
-    return u, y, s
-
+    @partial(jax.jit, static_argnums=(0,))
+    def __data_generation(self, key_i):
+        """Generates data containing batch_size samples"""
+        idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
+        s = self.s[idx, :]
+        x = self.x[idx, :]
+        t = self.t[idx, :]
+        u = self.u[idx, :]
+        # Construct batch
+        inputs = (u, (t, x))
+        outputs = s
+        return inputs, outputs
 
 # Define ds/dx
 def s_x_net(model_fn, params, u, t, x):
     v_x = jnp.ones(x.shape)
-    s_x = jax.jvp(lambda x: apply_net(model_fn, params, u, t, x), (x,), (v_x,))
+    # Verify whether to use [0] or [1] for jvp
+    s_x = jax.jvp(lambda x: apply_net(model_fn, params, u, t, x), (x,), (v_x,))[1]
     return s_x
-
 
 def loss_ics(model_fn, params, ics_batch):
         inputs, outputs = ics_batch
         u, y = inputs
 
         # Compute forward pass
-        t = y[:, 0]
-        x = y[:, 1]
+        t = y[0]
+        x = y[1]
         s_pred = apply_net(model_fn, params, u, t, x)
 
         # Compute loss
@@ -121,23 +127,24 @@ def loss_ics(model_fn, params, ics_batch):
         return loss_ic
 
 
-def loss_bcs(model_fn, params, ics_batch):
+def loss_bcs(model_fn, params, bcs_batch):
     # Fetch data
-    inputs, outputs = ics_batch
+    inputs, outputs = bcs_batch
     u, y = inputs
-
-    # Compute forward pass
-    s_bc1_pred = apply_net(model_fn, params, u, y[:, 0], y[:, 1])
-    s_bc2_pred = apply_net(model_fn, params, u, y[:, 2], y[:, 3])
+    x, t_bc = y
+    x_bc_1, x_bc_2 = x
 
     # Assert shapes here for easier gradient computation
-    x_bc_1 = jnp.reshape(y[:,0], (-1, 1))
-    t_bc_1 = jnp.reshape(y[:,1], (-1, 1))
-    x_bc_2 = jnp.reshape(y[:,2], (-1, 1))
-    t_bc_2 = jnp.reshape(y[:,3], (-1, 1))
+    x_bc_1 = jnp.reshape(x_bc_1, (-1, 1))
+    x_bc_2 = jnp.reshape(x_bc_2, (-1, 1))
+    t_bc = jnp.reshape(t_bc, (-1, 1))
 
-    s_x_bc1_pred = s_x_net(model_fn, params, u, x_bc_1, t_bc_1)
-    s_x_bc2_pred = s_x_net(model_fn, params, u, x_bc_2, t_bc_2)
+    # Compute forward pass
+    s_bc1_pred = apply_net(model_fn, params, u, x_bc_1, t_bc)
+    s_bc2_pred = apply_net(model_fn, params, u, x_bc_2, t_bc)
+
+    s_x_bc1_pred = s_x_net(model_fn, params, u, x_bc_1, t_bc)
+    s_x_bc2_pred = s_x_net(model_fn, params, u, x_bc_2, t_bc)
 
     # Compute loss
     loss_s_bc = mse(s_bc1_pred, s_bc2_pred)
@@ -152,8 +159,7 @@ def loss_res(model_fn, params, batch):
     inputs, outputs = batch
     u, y = inputs
     # Compute forward pass
-    t = y[:,0]
-    x = y[:,1]
+    x, t = y
 
     # Residual PDE
     s = apply_net(model_fn, params, u, t, x)
@@ -200,45 +206,114 @@ def main_routine(args):
     key = jax.random.PRNGKey(seed)
     keys = jax.random.split(key, 6)
 
+    # Note: Data generation procedure would be quicker using vmap
+    # However, comparison / adaptation to separable approach is easier with loop
     # ICs data
+    # Init empty arrays for storage
+    u_ics_train = []
+    x_ics_train = []
+    s_ics_train = []
+    # Loop over initial functions
+    for u_0 in u0_train:
+        u = jnp.tile(u_0, (args.p_ics_train, 1))
+        u_ics_train.append(u)
 
-    u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
-                                                      in_axes=(0, None))
-                                             (u0_train, args.p_ics_train))
-    # ICs data at args.p_ics_train locations
-    # TODO: Adapt data generation and datasets for easier use during training
-    t_0 = jnp.zeros((1,1)) # time will be always zero
-    x_0 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
+        x_0 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
+        x_ics_train.append(x_0)
 
+        s = u_0
+        s_ics_train.append(s)
 
-    y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
+    t_ics_train = jnp.zeros((1, 1))
+
+    # Make array
+    u_ics_train = jnp.array(u_ics_train)
+    x_ics_train = jnp.array(x_ics_train)
+    s_ics_train = jnp.array(s_ics_train)
+
+    u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
+    x_ics_train = x_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
 
+    # Create data generator
+    ics_dataset = DataGeneratorIC(u_ics_train, x_ics_train, t_ics_train, s_ics_train, args.batch_size, keys[2])
+
     # BCs data
+    # Init empty arrays for storage
+    u_bcs_train = []
+    t_bcs_train = []
+    s_bcs_train = []
+    # generate keys for BCs
     bc_keys = jax.random.split(keys[0], args.n_train)
-    u_bcs_train, y_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (bc_keys, u0_train, args.p_bcs_train))
+    # Loop over BCs
+    for key_i, u0_i in zip(bc_keys, u0_train):
+        t_bc = jax.random.uniform(key_i, (args.p_bcs_train, 1))
+        t_bcs_train.append(t_bc)
+
+        u = jnp.tile(u0_i, (args.p_bcs_train, 1))
+        u_bcs_train.append(u)
+
+        s = jnp.zeros((args.p_bcs_train, 1))
+        s_bcs_train.append(s)
+
+    x_bc1_train = jnp.zeros((1, 1))
+    x_bc2_train = jnp.ones((1, 1))
+    x_bc_train = (x_bc1_train, x_bc2_train)
+
+    # Make array
+    u_bcs_train = jnp.array(u_bcs_train)
+    t_bcs_train = jnp.array(t_bcs_train)
+    s_bcs_train = jnp.array(s_bcs_train)
 
     u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
-    y_bcs_train = y_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
+    t_bcs_train = t_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
     s_bcs_train = s_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
 
+    # Create data generator
+    # Normally, this would require differentiating between BC1 and BC2
+    # However, as s=0 for both, we can use the same data generator
+    bcs_dataset = DataGeneratorBC(u_bcs_train, x_bc_train, t_bcs_train, s_bcs_train, args.batch_size, keys[3])
+    # Note: p_bcs_train can be halved as one sample from t is used for both BCs
+
     # Residual data
+    # Init empty arrays for storage
+    u_res_train = []
+    x_res_train = []
+    t_res_train = []
+    s_res_train = []
+
+    # generate keys for Residuals
     res_keys = jax.random.split(keys[1], args.n_train)
-    u_res_train, y_res_train, s_res_train = (jax.vmap(generate_one_res_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (res_keys, u0_train, args.p_res_train))
+    # Loop over Residuals
+    for key_i, u0_i in zip(res_keys, u0_train):
+        subkeys = jax.random.split(key_i, 2)
+        t_res = jax.random.uniform(subkeys[0], (args.p_res_train, 1))
+        #t_res = jnp.linspace(0, 1, args.p_res_train).reshape(-1,1)
+        x_res = jax.random.uniform(subkeys[1], (args.p_res_train, 1))
+        #x_res = jnp.linspace(0, 1, args.p_res_train).reshape(-1,1)
+
+        x_res_train.append(x_res)
+        t_res_train.append(t_res)
+
+        u = jnp.tile(u0_i, (args.p_res_train, 1))
+        u_res_train.append(u)
+
+        s = jnp.zeros((args.p_res_train, args.p_res_train))
+        s_res_train.append(s)
+
+    # Make array
+    u_res_train = jnp.array(u_res_train)
+    x_res_train = jnp.array(x_res_train)
+    t_res_train = jnp.array(t_res_train)
+    s_res_train = jnp.array(s_res_train)
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
-    y_res_train = y_res_train.reshape(args.n_train * args.p_res_train, -1)
+    x_res_train = x_res_train.reshape(args.n_train * args.p_res_train, -1)
+    t_res_train = t_res_train.reshape(args.n_train * args.p_res_train, -1)
     s_res_train = s_res_train.reshape(args.n_train * args.p_res_train, -1)
 
     # Create data generators
-    batch_size = 100
-    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, batch_size, keys[2])
-    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, batch_size, keys[3])
-    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, batch_size, keys[4])
+    res_dataset = DataGeneratorRes(u_res_train, x_res_train, s_res_train, args.batch_size, keys[4])
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[5])
@@ -264,7 +339,7 @@ def main_routine(args):
         loss, params_step, opt_state = step(optimizer, loss_fn, model_fn, opt_state,
                                             params, ics_batch, bcs_batch, res_batch)
 
-        if it % 100 == 0:
+        if it % args.log_iter == 0:
             # Compute losses
             loss_ics_value = loss_ics(model_fn, params, ics_batch)
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
@@ -324,10 +399,11 @@ if __name__ == "__main__":
     parser.add_argument('--n_train', type=int, default=1000, help='number of input samples used for training')
     parser.add_argument('--p_ics_train', type=int, default=101,
                         help='number of locations for evaluating the initial condition')
-    parser.add_argument('--p_bcs_train', type=int, default=100,
+    parser.add_argument('--p_bcs_train', type=int, default=50,
                         help='number of locations for evaluating the boundary condition')
-    parser.add_argument('--p_res_train', type=int, default=2500,
+    parser.add_argument('--p_res_train', type=int, default=50,
                         help='number of locations for evaluating the PDE residual')
+    parser.add_argument('--batch_size', type=int, default=100, help='batch size')
 
     args_in = parser.parse_args()
 

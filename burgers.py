@@ -193,7 +193,6 @@ def main_routine(args):
     keys = jax.random.split(key, 6)
 
     # ICs data
-
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
                                                       in_axes=(0, None))
                                              (u0_train, args.p_ics_train))

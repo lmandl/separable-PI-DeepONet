@@ -50,13 +50,18 @@ def setup_deeponet(args, key):
     if not args.separable:
         model = DeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
                          args.num_outputs)
+        params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
+                            jnp.ones(shape=(1, args.trunk_input_features)))
     else:
         model = SeparableDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk, args.stacked_do,
                                   args.num_outputs, args.r)
 
-    # Initialize parameters
-    params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
-                        jnp.ones(shape=(1, args.trunk_input_features)))
+        # Initialize parameters
+        # init of trunk needs args.trunk_input_features * jnp.ones(shape=(1, 1)) but not as list
+        input_features = [jnp.ones(shape=(1, 1)) for _ in range(args.trunk_input_features)]
+
+        params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
+                            *input_features)
 
     # model function
     model_fn = jax.jit(model.apply)

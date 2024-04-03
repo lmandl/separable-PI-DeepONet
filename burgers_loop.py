@@ -64,9 +64,9 @@ def loss_ics(model_fn, params, ics_batch):
         return loss_ic
 
 
-def loss_bcs(model_fn, params, ics_batch):
+def loss_bcs(model_fn, params, bcs_batch):
     # Fetch data
-    inputs, outputs = ics_batch
+    inputs, outputs = bcs_batch
     u, y = inputs
 
     # Compute forward pass
