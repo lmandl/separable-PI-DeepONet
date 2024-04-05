@@ -97,7 +97,7 @@ class DataGeneratorRes(data.Dataset):
     def __data_generation(self, key_i):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
-        s = self.s[idx, :]
+        s = jnp.tile(self.s, (self.batch_size, self.batch_size))
         x = self.x[idx, :]
         t = self.t[idx, :]
         u = self.u[idx, :]
@@ -131,7 +131,7 @@ def loss_bcs(model_fn, params, bcs_batch):
     # Fetch data
     inputs, outputs = bcs_batch
     u, y = inputs
-    x, t_bc = y
+    t_bc, x = y
     x_bc_1, x_bc_2 = x
 
     # Assert shapes here for easier gradient computation
@@ -163,18 +163,16 @@ def loss_res(model_fn, params, batch):
 
     # Residual PDE
     s = apply_net(model_fn, params, u, t, x)
-    v_x = jnp.atleast_2d(jnp.ones(x.shape)).T
-    v_t = jnp.atleast_2d(jnp.ones(t.shape)).T
+    v_x = jnp.ones(x.shape)
+    v_t = jnp.ones(t.shape)
 
-    #TODO: Forward mode AD
-
-    s_t = jax.vjp(lambda t: apply_net(model_fn, params, u, t, x), t)[1](v_t)[0]
-    s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
-    s_xx = jax.jvp(lambda x: jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0], (x,), (v_x,))[1]
+    # Verify whether to use [0] or [1] for jvp
+    s_t = jax.jvp(lambda t: apply_net(model_fn, params, u, t, x), (t,), (v_t,))[1]
+    s_x, s_xx = hvp_fwdfwd(lambda x: apply_net(model_fn, params, u, t, x), (x,), (v_x,), True)
 
     pred = s_t + s * s_x - 0.01 * s_xx
     # Compute loss
-    loss = mse(outputs.flatten(), pred)
+    loss = mse(outputs, pred)
     return loss
 
 
@@ -280,7 +278,6 @@ def main_routine(args):
     u_res_train = []
     x_res_train = []
     t_res_train = []
-    s_res_train = []
 
     # generate keys for Residuals
     res_keys = jax.random.split(keys[1], args.n_train)
@@ -298,22 +295,19 @@ def main_routine(args):
         u = jnp.tile(u0_i, (args.p_res_train, 1))
         u_res_train.append(u)
 
-        s = jnp.zeros((args.p_res_train, args.p_res_train))
-        s_res_train.append(s)
 
     # Make array
     u_res_train = jnp.array(u_res_train)
     x_res_train = jnp.array(x_res_train)
     t_res_train = jnp.array(t_res_train)
-    s_res_train = jnp.array(s_res_train)
+    s_res_train = jnp.zeros((1, 1))
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
     x_res_train = x_res_train.reshape(args.n_train * args.p_res_train, -1)
     t_res_train = t_res_train.reshape(args.n_train * args.p_res_train, -1)
-    s_res_train = s_res_train.reshape(args.n_train * args.p_res_train, -1)
 
     # Create data generators
-    res_dataset = DataGeneratorRes(u_res_train, x_res_train, s_res_train, args.batch_size, keys[4])
+    res_dataset = DataGeneratorRes(u_res_train, x_res_train, t_res_train, s_res_train, args.batch_size, keys[4])
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[5])
