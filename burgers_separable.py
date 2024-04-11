@@ -106,6 +106,35 @@ class DataGeneratorRes(data.Dataset):
         outputs = s
         return inputs, outputs
 
+# Generate ics training data corresponding to one input sample
+def generate_one_ics_training_data(u0, p=101):
+    x = jnp.linspace(0, 1, p)[:, None]
+
+    u = jnp.tile(u0, (p, 1))
+    s = u0
+
+    return u, x, s
+
+# Generate bcs training data corresponding to one input sample
+def generate_one_bcs_training_data(key, u0, p=100):
+    t = jax.random.uniform(key, (p, 1))
+
+    u = jnp.tile(u0, (p, 1))
+    s = jnp.zeros((p, 1))
+
+    return u, t, s
+
+# Generate res training data corresponding to one input sample
+def generate_one_res_training_data(key, u0, p=1000):
+    subkeys = jax.random.split(key, 2)
+
+    t = jax.random.uniform(subkeys[0], (p, 1))
+    x = jax.random.uniform(subkeys[1], (p, 1))
+
+    u = jnp.tile(u0, (p, 1))
+
+    return u, x, t
+
 # Define ds/dx
 def s_x_net(model_fn, params, u, t, x):
     v_x = jnp.ones(x.shape)
@@ -204,30 +233,12 @@ def main_routine(args):
     key = jax.random.PRNGKey(seed)
     keys = jax.random.split(key, 6)
 
-    # Note: Data generation procedure would be quicker using vmap
-    # However, comparison / adaptation to separable approach is easier with loop
     # ICs data
-    # Init empty arrays for storage
-    u_ics_train = []
-    x_ics_train = []
-    s_ics_train = []
-    # Loop over initial functions
-    for u_0 in u0_train:
-        u = jnp.tile(u_0, (args.p_ics_train, 1))
-        u_ics_train.append(u)
-
-        x_0 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
-        x_ics_train.append(x_0)
-
-        s = u_0
-        s_ics_train.append(s)
-
+    u_ics_train, x_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
+                                                      in_axes=(0, None))
+                                             (u0_train, args.p_ics_train))
+    # t sampled just once
     t_ics_train = jnp.zeros((1, 1))
-
-    # Make array
-    u_ics_train = jnp.array(u_ics_train)
-    x_ics_train = jnp.array(x_ics_train)
-    s_ics_train = jnp.array(s_ics_train)
 
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     x_ics_train = x_ics_train.reshape(args.n_train * args.p_ics_train, -1)
@@ -238,30 +249,16 @@ def main_routine(args):
 
     # BCs data
     # Init empty arrays for storage
-    u_bcs_train = []
-    t_bcs_train = []
-    s_bcs_train = []
     # generate keys for BCs
     bc_keys = jax.random.split(keys[0], args.n_train)
-    # Loop over BCs
-    for key_i, u0_i in zip(bc_keys, u0_train):
-        t_bc = jax.random.uniform(key_i, (args.p_bcs_train, 1))
-        t_bcs_train.append(t_bc)
 
-        u = jnp.tile(u0_i, (args.p_bcs_train, 1))
-        u_bcs_train.append(u)
-
-        s = jnp.zeros((args.p_bcs_train, 1))
-        s_bcs_train.append(s)
+    u_bcs_train, t_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
+                                                      in_axes=(0, 0, None))
+                                             (bc_keys, u0_train, args.p_bcs_train))
 
     x_bc1_train = jnp.zeros((1, 1))
     x_bc2_train = jnp.ones((1, 1))
     x_bc_train = (x_bc1_train, x_bc2_train)
-
-    # Make array
-    u_bcs_train = jnp.array(u_bcs_train)
-    t_bcs_train = jnp.array(t_bcs_train)
-    s_bcs_train = jnp.array(s_bcs_train)
 
     u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
     t_bcs_train = t_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
@@ -281,25 +278,11 @@ def main_routine(args):
 
     # generate keys for Residuals
     res_keys = jax.random.split(keys[1], args.n_train)
-    # Loop over Residuals
-    for key_i, u0_i in zip(res_keys, u0_train):
-        subkeys = jax.random.split(key_i, 2)
-        t_res = jax.random.uniform(subkeys[0], (args.p_res_train, 1))
-        #t_res = jnp.linspace(0, 1, args.p_res_train).reshape(-1,1)
-        x_res = jax.random.uniform(subkeys[1], (args.p_res_train, 1))
-        #x_res = jnp.linspace(0, 1, args.p_res_train).reshape(-1,1)
 
-        x_res_train.append(x_res)
-        t_res_train.append(t_res)
+    u_res_train, x_res_train, t_res_train = (jax.vmap(generate_one_res_training_data,
+                                                      in_axes=(0, 0, None))
+                                             (res_keys, u0_train, args.p_res_train))
 
-        u = jnp.tile(u0_i, (args.p_res_train, 1))
-        u_res_train.append(u)
-
-
-    # Make array
-    u_res_train = jnp.array(u_res_train)
-    x_res_train = jnp.array(x_res_train)
-    t_res_train = jnp.array(t_res_train)
     s_res_train = jnp.zeros((1, 1))
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
