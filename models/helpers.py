@@ -43,14 +43,6 @@ def apply_net_sep(model_fn, params, branch_input, *trunk_in):
     return out
     # TODO: Combine apply_net and apply_net_sep into one function
 
-# single update function
-@partial(jax.jit, static_argnums=(0,))
-def update_model(optim, gradient, params, state):
-    updates, state = optim.update(gradient, state)
-    params = optax.apply_updates(params, updates)
-    return params, state
-
-
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def step(optimizer, loss_fn, model_fn, opt_state, params_step, ics_batch, bcs_batch, res_batch):
     loss, gradient = jax.value_and_grad(loss_fn, argnums=1)(model_fn, params_step, ics_batch, bcs_batch, res_batch)
@@ -59,16 +51,7 @@ def step(optimizer, loss_fn, model_fn, opt_state, params_step, ics_batch, bcs_ba
 
     return loss, params_step, opt_state
 
-
-@partial(jax.jit, static_argnums=(0,))
-def train_error(model_fn, params, x, y):
-    y_pred = model_fn(params, x[0], x[1])
-    rel_l2 = relative_l2(y, y_pred)
-    return rel_l2
-
-
-# Following functions taken from https://github.com/stnamjef/SPINN
-
+# Following function taken from https://github.com/stnamjef/SPINN
 # forward over forward
 def hvp_fwdfwd(f, primals, tangents, return_primals=False):
     g = lambda primals: jvp(f, (primals,), tangents)[1]

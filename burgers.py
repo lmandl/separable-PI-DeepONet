@@ -3,14 +3,15 @@ import jax.numpy as jnp
 from torch.utils import data
 from functools import partial
 import tqdm
+import time
 import optax
 import scipy.io
 import os
 import argparse
 
 from models import setup_deeponet
-from models import relative_l2, mse, train_error
-from models import apply_net, step, update_model
+from models import relative_l2, mse
+from models import apply_net, step
 
 
 # Data Generator
@@ -83,22 +84,21 @@ def generate_one_res_training_data(key, u0, p=1000):
 
     return u, y, s
 
-
 # Generate test data corresponding to one input sample
-def generate_one_test_data(idx, usol, p=101):
+def generate_one_test_data(usol, idx, P=101):
+
     u = usol[idx]
     u0 = u[0, :]
 
-    t = jnp.linspace(0, 1, p)
-    x = jnp.linspace(0, 1, p)
+    t = jnp.linspace(0, 1, P)
+    x = jnp.linspace(0, 1, P)
     T, X = jnp.meshgrid(t, x)
 
     s = u.T.flatten()
-    u = jnp.tile(u0, (p ** 2, 1))
+    u = jnp.tile(u0, (P ** 2, 1))
     y = jnp.hstack([T.flatten()[:, None], X.flatten()[:, None]])
 
     return u, y, s
-
 
 # Define ds/dx
 def s_x_net(model_fn, params, u, t, x):
@@ -171,6 +171,16 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_value = loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
+def get_error(model_fn, params, u_sol, idx, P=101):
+    u_test, y_test, s_test = generate_one_test_data(u_sol, idx, P)
+
+    t_test = y_test[:, 0]
+    x_test = y_test[:, 1]
+
+    s_pred = apply_net(model_fn, params, u_test, t_test, x_test)
+    error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
+    return error
+
 
 def main_routine(args):
     # Prepare the training data
@@ -181,8 +191,8 @@ def main_routine(args):
     u_sol = jnp.array(data_ref['output'])
 
     n_in = u_sol.shape[0]  # number of total input samples
-    args.n_test = n_in - args.n_train  # number of input samples used for test
-    if args.n_test < 0:
+    n_test = n_in - args.n_train  # number of input samples used for test
+    if n_test < 0:
         raise ValueError('Number of test samples is negative')
 
     u0_train = u_sol[:args.n_train, 0, :]  # input samples
@@ -225,8 +235,12 @@ def main_routine(args):
     bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, args.batch_size, keys[3])
     res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, args.batch_size, keys[4])
 
+    # Create test data
+    test_range = jnp.arange(args.n_train, u_sol.shape[0])-1000
+    test_idx = jax.random.choice(keys[5], test_range, (args.n_test,), replace=False)
+
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[5])
+    args, model, model_fn, params = setup_deeponet(args, keys[6])
 
     # Define optimizer with optax (ADAM)
     optimizer = optax.adam(learning_rate=args.lr)
@@ -238,6 +252,20 @@ def main_routine(args):
     res_data = iter(res_dataset)
     pbar = tqdm.trange(args.epochs)
 
+    # create dir for saving results
+    result_dir = os.path.join(os.getcwd(), args.result_dir)
+    log_file = os.path.join(result_dir, 'log (loss, error).csv')
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+    if os.path.exists(log_file):
+        os.remove(log_file)
+
+    with open(log_file, 'a') as f:
+        f.write(' epoch , loss, loss_ics_value, loss_bcs_value, loss_res_value, err_val, runtime\n')
+
+    # start timer
+    start = time.time()
+
     # Training loop
     for it in pbar:
         # Fetch data
@@ -246,7 +274,7 @@ def main_routine(args):
         res_batch = next(res_data)
 
         # Do Step
-        loss, params_step, opt_state = step(optimizer, loss_fn, model_fn, opt_state,
+        loss, params, opt_state = step(optimizer, loss_fn, model_fn, opt_state,
                                             params, ics_batch, bcs_batch, res_batch)
 
         if it % args.log_iter == 0:
@@ -255,13 +283,25 @@ def main_routine(args):
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
 
-            # TODO: Compute error
+            # compute error over test data
+            errors = jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx, args.p_test)
+
+            err_val = jnp.mean(errors)
 
             # Print losses
             pbar.set_postfix({'Loss': loss,
                               'loss_ics': loss_ics_value,
                               'loss_bcs': loss_bcs_value,
-                              'loss_physics': loss_res_value})
+                              'loss_physics': loss_res_value,
+                              'test_error': err_val})
+
+            # get runtime
+            runtime = time.time() - start
+
+            # Save results
+            with open(os.path.join(result_dir, 'log (loss, error).csv'), 'a') as f:
+                f.write(f'{it}, {loss}, {loss_ics_value}, '
+                        f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
 
 if __name__ == "__main__":
@@ -270,7 +310,7 @@ if __name__ == "__main__":
 
     # model settings
     parser.add_argument('--num_outputs', type=int, default=1, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=40,
+    parser.add_argument('--hidden_dim', type=int, default=100,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
@@ -279,7 +319,7 @@ if __name__ == "__main__":
     parser.add_argument('--r', type=int, default=128, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=int, nargs="+", default=128, help='hidden branch layer sizes')
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=[128, 128, 128, 128, 128, 128], help='hidden branch layer sizes')
     parser.add_argument('--n_sensors', type=int, default=101,
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
@@ -288,7 +328,7 @@ if __name__ == "__main__":
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=int, nargs="+", default=128, help='hidden trunk layer sizes')
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[128, 128, 128, 128, 128, 128], help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2, help='number of input features to trunk network')
     parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into j groups for j outputs')
@@ -296,23 +336,26 @@ if __name__ == "__main__":
     # Training settings
     parser.add_argument('--seed', type=int, default=1337, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=10000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
 
     # result directory
-    parser.add_argument('--result_dir', type=str, default='./result',
+    parser.add_argument('--result_dir', type=str, default='./result/burgers',
                         help='a directory to save results, relative to cwd')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
+    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
 
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000, help='number of input samples used for training')
+    parser.add_argument('--n_test', type=int, default=50, help='number of samples used for testing')
     parser.add_argument('--p_ics_train', type=int, default=101,
                         help='number of locations for evaluating the initial condition')
     parser.add_argument('--p_bcs_train', type=int, default=100,
                         help='number of locations for evaluating the boundary condition')
     parser.add_argument('--p_res_train', type=int, default=2500,
                         help='number of locations for evaluating the PDE residual')
+    parser.add_argument('--p_test', type=int, default=101,
+                        help='number of locations for evaluating the error')
     parser.add_argument('--batch_size', type=int, default=100, help='batch size')
 
     args_in = parser.parse_args()

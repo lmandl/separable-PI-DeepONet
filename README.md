@@ -13,9 +13,9 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
 
 #### Current TODOs
-* Getting Burgers Equation working separable DeepONets
-* Forward mode AD in separable PI DeepONets
+* Getting test data to run
 * Consistency using x and t in Burgers Example
+* fix consistency for the use of p_ics_train, p_bcs_train, p_res_train, and p_test and make it compatible with sampling from a predefined grid
 
 #### Upcoming Tasks
 * Biot's equation of consolidation in 1D
@@ -27,7 +27,6 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 
 #### Future Projects / Minor TODOs
-* Remove purely data-driven system for easy use
 * Refactor training loop into PI_DeepONet class
 * Unify use of jax.vmap and jax.jit
 * Visualization
@@ -45,9 +44,6 @@ Upcoming examples:
 
 #### Note on dimensions
 Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time t as input.
-
-#### Note on alignment of datasets
-DeepXDE allows to differentiate between aligned and unaligned datasets. For the sake of easier use later on, the framework expects unaligned data. Hence, for the respective problems with aligned datasets, the data has to be loaded in the correct form or manipulated in the respective form. More information can be extracted from https://deepxde.readthedocs.io/en/latest/modules/deepxde.data.html#deepxde.data.triple.TripleCartesianProd. (TBD in code)
 
 #### Multiple inputs to branch network
 function with several values per sensor can be included which will be achieved by flattening the input in the DeepONet 

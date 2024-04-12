@@ -85,7 +85,7 @@ class SeparableDeepONet(nn.Module):
     output_dim: int = 1
     r: int = 128
 
-    # TODO: split_branc, split_trunk and output_dim are not used/tested in the current implementation
+    # TODO: split_branch, split_trunk and output_dim are not used/tested in the current implementation
 
     @nn.compact
     def __call__(self, branch_x, *trunk_x):
