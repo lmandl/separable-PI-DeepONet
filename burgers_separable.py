@@ -146,7 +146,7 @@ def generate_one_test_data(usol, idx, P=101):
     x = jnp.linspace(0, 1, P).reshape(P,1)
 
     s = u.T.flatten()
-    u = jnp.tile(u0, (P ** 2, 1))
+    u = jnp.tile(u0, (P, 1))
 
     return u, t, x, s
 
@@ -231,6 +231,7 @@ def get_error(model_fn, params, u_sol, idx, P=101):
     u_test, t_test, x_test, s_test = generate_one_test_data(u_sol, idx, P)
 
     s_pred = apply_net(model_fn, params, u_test, t_test, x_test)
+    s_pred = s_pred.flatten()
     error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
     return error
 

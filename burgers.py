@@ -8,11 +8,12 @@ import optax
 import scipy.io
 import os
 import argparse
+import matplotlib.pyplot as plt
+import shutil
 
 from models import setup_deeponet
 from models import relative_l2, mse
 from models import apply_net, step
-
 
 # Data Generator
 class DataGenerator(data.Dataset):
@@ -42,7 +43,6 @@ class DataGenerator(data.Dataset):
         outputs = s
         return inputs, outputs
 
-
 # Generate ics training data corresponding to one input sample
 def generate_one_ics_training_data(u0, p=101):
     t_0 = jnp.zeros((p, 1))
@@ -53,7 +53,6 @@ def generate_one_ics_training_data(u0, p=101):
     s = u0
 
     return u, y, s
-
 
 # Generate bcs training data corresponding to one input sample
 def generate_one_bcs_training_data(key, u0, p=100):
@@ -106,20 +105,18 @@ def s_x_net(model_fn, params, u, t, x):
     s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
     return s_x
 
-
 def loss_ics(model_fn, params, ics_batch):
-        inputs, outputs = ics_batch
-        u, y = inputs
+    inputs, outputs = ics_batch
+    u, y = inputs
 
-        # Compute forward pass
-        t = y[:, 0]
-        x = y[:, 1]
-        s_pred = apply_net(model_fn, params, u, t, x)
+    # Compute forward pass
+    t = y[:, 0]
+    x = y[:, 1]
+    s_pred = apply_net(model_fn, params, u, t, x)
 
-        # Compute loss
-        loss_ic = mse(outputs.flatten(), s_pred)
-        return loss_ic
-
+    # Compute loss
+    loss_ic = mse(outputs.flatten(), s_pred)
+    return loss_ic
 
 def loss_bcs(model_fn, params, ics_batch):
     # Fetch data
@@ -134,11 +131,11 @@ def loss_bcs(model_fn, params, ics_batch):
     s_x_bc2_pred = s_x_net(model_fn, params, u, y[:, 2], y[:, 3])
 
     # Compute loss
+
     loss_s_bc = mse(s_bc1_pred, s_bc2_pred)
     loss_s_x_bc = mse(s_x_bc1_pred, s_x_bc2_pred)
 
     return loss_s_bc + loss_s_x_bc
-
 
 # Define residual loss
 def loss_res(model_fn, params, batch):
@@ -163,15 +160,14 @@ def loss_res(model_fn, params, batch):
     loss = mse(outputs.flatten(), pred)
     return loss
 
-
 def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = 20 * loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
-def get_error(model_fn, params, u_sol, idx, P=101):
+def get_error(model_fn, params, u_sol, idx, P=101, return_data = False):
     u_test, y_test, s_test = generate_one_test_data(u_sol, idx, P)
 
     t_test = y_test[:, 0]
@@ -179,7 +175,67 @@ def get_error(model_fn, params, u_sol, idx, P=101):
 
     s_pred = apply_net(model_fn, params, u_test, t_test, x_test)
     error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
-    return error
+
+    if return_data == True:
+        return error, s_pred
+    else:
+        return error
+
+def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
+    # Generate data, and obtain error
+    error_s, s_pred = get_error(model_fn, params, usol, idx, args.p_test, return_data=True)
+
+    u = usol[idx].T
+
+    t = jnp.linspace(0, 1, args.p_test)
+    x = jnp.linspace(0, 1, args.p_test)
+
+    # Reshape s_pred
+    s_pred = s_pred.reshape(t.shape[0], x.shape[0])
+
+    #print("error_s: {:.3e}".format(error_s))
+
+    fig = plt.figure(figsize=(18, 5))
+    plt.subplot(1, 3, 1)
+    plt.imshow(u, interpolation="nearest", vmin=jnp.amin(u), vmax=jnp.amax(u),
+               extent=[t.min(), t.max(), x.max(), x.min()],
+               origin='upper', aspect='auto', cmap='viridis')
+    plt.xlabel('t')
+    plt.ylabel('x')
+    plt.title('Exact u')
+    plt.colorbar()
+    plt.tight_layout()
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(s_pred, interpolation="nearest", vmin=jnp.amin(u), vmax=jnp.amax(u),
+               extent=[t.min(), t.max(), x.max(), x.min()],
+               origin='upper', aspect='auto', cmap='viridis')
+    plt.xlabel('t')
+    plt.ylabel('x')
+    plt.title('Predicted u')
+    plt.colorbar()
+    plt.tight_layout()
+
+    u_diff = u-s_pred
+    plt.subplot(1, 3, 3)
+    plt.imshow(u_diff, interpolation="nearest", vmin=abs(u_diff).max(), vmax=-abs(u_diff).max(),
+               extent=[t.min(), t.max(), x.max(), x.min()],
+               origin='upper', aspect='auto', cmap='seismic')
+    plt.xlabel('t')
+    plt.ylabel('x')
+    plt.title('Absolute error')
+    plt.colorbar()
+
+    if test:
+        plt.suptitle(f'test, L2: {error_s:.3e}')
+    else:
+        plt.suptitle(f'train, L2: {error_s:.3e}')
+    plt.tight_layout()
+    plot_dir = os.path.join(result_dir, f'vis/{epoch:06d}/{idx}/')
+    if not os.path.exists(plot_dir):
+        os.makedirs(plot_dir)
+    plt.savefig(os.path.join(os.path.join(result_dir, plot_dir), 'pred.png'))
+    plt.close(fig)
 
 
 def main_routine(args):
@@ -200,7 +256,7 @@ def main_routine(args):
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 6)
+    keys = jax.random.split(key, 7)
 
     # ICs data
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
@@ -236,8 +292,10 @@ def main_routine(args):
     res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, args.batch_size, keys[4])
 
     # Create test data
-    test_range = jnp.arange(args.n_train, u_sol.shape[0])-1000
+    test_range = jnp.arange(args.n_train, u_sol.shape[0])
+    # switched for testing
     test_idx = jax.random.choice(keys[5], test_range, (args.n_test,), replace=False)
+    #test_idx = 0
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[6])
@@ -257,11 +315,19 @@ def main_routine(args):
     log_file = os.path.join(result_dir, 'log (loss, error).csv')
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
+    if os.path.exists(os.path.join(result_dir, 'vis')):
+        shutil.rmtree(os.path.join(result_dir, 'vis'))
     if os.path.exists(log_file):
         os.remove(log_file)
 
     with open(log_file, 'a') as f:
         f.write(' epoch , loss, loss_ics_value, loss_bcs_value, loss_res_value, err_val, runtime\n')
+
+    # Choose Plots for visualization
+    k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+    # switched for testing
+    k_test = test_idx[0]  # index
+    #k_test = 0
 
     # start timer
     start = time.time()
@@ -285,6 +351,8 @@ def main_routine(args):
 
             # compute error over test data
             errors = jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx, args.p_test)
+            # switched for testing
+            #errors = get_error(model_fn, params, u_sol, test_idx, args.p_test, return_data=False)
 
             err_val = jnp.mean(errors)
 
@@ -303,6 +371,20 @@ def main_routine(args):
                 f.write(f'{it}, {loss}, {loss_ics_value}, '
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
+
+        # Visualize result
+
+        if it % args.vis_iter == 0 and args.vis_iter>0:
+            # Visualize train example
+            visualize(args, model_fn, params, result_dir, it, u_sol, k_train, False)
+            # Visualize test example
+            visualize(args, model_fn, params, result_dir, it, u_sol, k_test, True)
+    # Final visualization
+    if args.vis_iter > 0:
+        # Visualize train example
+        visualize(args, model_fn, params, result_dir, it, u_sol, k_train, False)
+        # Visualize test example
+        visualize(args, model_fn, params, result_dir, it, u_sol, k_test, True)
 
 if __name__ == "__main__":
     # parse command line arguments
@@ -334,7 +416,7 @@ if __name__ == "__main__":
                         help='split trunk outputs into j groups for j outputs')
 
     # Training settings
-    parser.add_argument('--seed', type=int, default=1337, help='random seed')
+    parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
 
@@ -344,6 +426,7 @@ if __name__ == "__main__":
 
     # log settings
     parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
+    parser.add_argument('--vis_iter', type=int, default=10000, help='iteration to save visualization')
 
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000, help='number of input samples used for training')
@@ -356,7 +439,7 @@ if __name__ == "__main__":
                         help='number of locations for evaluating the PDE residual')
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
-    parser.add_argument('--batch_size', type=int, default=100, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=50000, help='batch size')
 
     args_in = parser.parse_args()
 

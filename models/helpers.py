@@ -21,7 +21,7 @@ def mse(y_true, y_pred):
     """
     Computes the mean squared error between u and u_gt
     """
-    return jnp.mean((y_true - y_pred) ** 2)
+    return jnp.mean(jnp.square(y_true - y_pred))
 
 
 @partial(jax.jit, static_argnums=(0,))
