@@ -7,22 +7,19 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 ### Models
 
 #### Implemented
-* vanilla DeepONets (stacked/unstacked) with bias and extension to multiple outputs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
-  * split trunk and/or split branch
 * Burgers Equation PI (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
+* separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 
 #### Current TODOs
-* Getting test data to run
 * Consistency using x and t in Burgers Example
 * fix consistency for the use of p_ics_train, p_bcs_train, p_res_train, and p_test and make it compatible with sampling from a predefined grid
 
 #### Upcoming Tasks
+* include loss weighting as args
 * Biot's equation of consolidation in 1D
-* 
 
 #### Potential Extensions
-* separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 

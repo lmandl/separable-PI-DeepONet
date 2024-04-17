@@ -63,6 +63,13 @@ def setup_deeponet(args, key):
         params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
                             *input_features)
 
+    # Print model from parameters
+    print('--- model_summary ---')
+    # count total params
+    total_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
+    print(f'total params: {total_params}')
+    print('--- model_summary ---')
+
     # model function
     model_fn = jax.jit(model.apply)
 

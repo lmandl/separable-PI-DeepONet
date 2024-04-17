@@ -325,9 +325,17 @@ def main_routine(args):
 
     # Choose Plots for visualization
     k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+
     # switched for testing
     k_test = test_idx[0]  # index
-    #k_test = 0
+
+    # First visualization
+
+    if args.vis_iter > 0:
+        # Visualize train example
+        visualize(args, model_fn, params, result_dir, 0, u_sol, k_train, False)
+        # Visualize test example
+        visualize(args, model_fn, params, result_dir, 0, u_sol, k_test, True)
 
     # start timer
     start = time.time()
@@ -374,17 +382,12 @@ def main_routine(args):
 
         # Visualize result
 
-        if it % args.vis_iter == 0 and args.vis_iter>0:
+        if (it+1) % args.vis_iter == 0 and args.vis_iter>0:
             # Visualize train example
-            visualize(args, model_fn, params, result_dir, it, u_sol, k_train, False)
+            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_train, False)
             # Visualize test example
-            visualize(args, model_fn, params, result_dir, it, u_sol, k_test, True)
-    # Final visualization
-    if args.vis_iter > 0:
-        # Visualize train example
-        visualize(args, model_fn, params, result_dir, it, u_sol, k_train, False)
-        # Visualize test example
-        visualize(args, model_fn, params, result_dir, it, u_sol, k_test, True)
+            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_test, True)
+
 
 if __name__ == "__main__":
     # parse command line arguments
@@ -401,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--r', type=int, default=128, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=int, nargs="+", default=[128, 128, 128, 128, 128, 128], help='hidden branch layer sizes')
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=[128, 128, 128], help='hidden branch layer sizes')
     parser.add_argument('--n_sensors', type=int, default=101,
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
@@ -410,7 +413,7 @@ if __name__ == "__main__":
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[128, 128, 128, 128, 128, 128], help='hidden trunk layer sizes')
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[128, 128, 128], help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2, help='number of input features to trunk network')
     parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into j groups for j outputs')

@@ -39,6 +39,9 @@ def apply_net_sep(model_fn, params, branch_input, *trunk_in):
     # Define forward pass for separable DeepONet that takes series of trunk inputs
     out = model_fn(params, branch_input, *trunk_in)
     # Reshape to vector for single output for easier gradient computation
+    test = out.shape
+    test2 = out.min()
+    test3 = out.max()
     out = jnp.squeeze(out)
     return out
     # TODO: Combine apply_net and apply_net_sep into one function
