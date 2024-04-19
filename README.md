@@ -12,28 +12,21 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 
 #### Current TODOs
-* Consistency using x and t in Burgers Example
 * fix consistency for the use of p_ics_train, p_bcs_train, p_res_train, and p_test and make it compatible with sampling from a predefined grid
 
 #### Upcoming Tasks
 * include loss weighting as args
+* save model / checkpointing
 * Biot's equation of consolidation in 1D
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 
-#### Future Projects / Minor TODOs
-* Refactor training loop into PI_DeepONet class
-* Unify use of jax.vmap and jax.jit
-* Visualization
-* CheckPoint / Save & Load Weights
-* Input Shape in Flax is inferred from last axis: Does not need to be specified beforehand,
-* adjust network size accordingly
-
 ### Data/Equations
-Project is focused on later use of (physics-informed) DeepONets for solving problems in porous media. Current plans are:
+Project is focused on later use of physics-informed DeepONets for solving problems. Current plans are:
 * Biot's equation of consolidation in 1D
+* fracture mechanics example
 
 Upcoming examples:
 * theory of porous media (TPM) for consolidation in 1D
@@ -66,4 +59,3 @@ Reference Codes:
   * split branch in n groups, share trunk
   * share branch, split trunk in n groups
 * Multiple inputs to branch (e.g. two outputs (u,p) and two inputs (u, p)?)
-* batch_size or simply full_batch training?

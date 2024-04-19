@@ -3,7 +3,6 @@ import jax
 
 from .deeponet import DeepONet, SeparableDeepONet
 
-
 def setup_deeponet(args, key):
     # Overriding split_trunk and split_branch if num_outputs is 1
     if args.num_outputs == 1:
@@ -66,8 +65,8 @@ def setup_deeponet(args, key):
     # Print model from parameters
     print('--- model_summary ---')
     # count total params
-    total_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
-    print(f'total params: {total_params}')
+    args.total_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
+    print(f'total params: {args.total_params}')
     print('--- model_summary ---')
 
     # model function

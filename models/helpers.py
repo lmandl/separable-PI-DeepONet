@@ -4,25 +4,12 @@ from jax import jvp, vjp
 import optax
 from functools import partial
 
-
-def relative_l2(u_gt, u):
-    """
-    Computes the relative l2 error between u and u_gt
-    """
-    # if relative_l2 is called with a list of arrays, we stack them
-    if isinstance(u, list) and isinstance(u_gt, list):
-        u = jnp.dstack([jnp.array(elem) for elem in u])
-        u_gt = jnp.dstack([jnp.array(elem) for elem in u_gt])
-    rel_l2 = jnp.linalg.norm(u - u_gt) / jnp.linalg.norm(u_gt)
-    return rel_l2
-
-
+@partial(jax.jit)
 def mse(y_true, y_pred):
     """
     Computes the mean squared error between u and u_gt
     """
     return jnp.mean(jnp.square(y_true - y_pred))
-
 
 @partial(jax.jit, static_argnums=(0,))
 def apply_net(model_fn, params, branch_input, *trunk_in):
