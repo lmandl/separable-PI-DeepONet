@@ -105,7 +105,8 @@ class DataGeneratorRes(data.Dataset):
         s = jnp.tile(self.s, (self.batch_size, self.batch_size))
         x = self.x[idx, :]
         t = self.t[idx, :]
-        u = self.u[idx, :]
+        u = self.u[idx, :] # has shape (batch_size, n_sensors) but needs to be (batch_size**2, n_sensors)
+        u = jnp.tile(u, (self.batch_size, 1))
         # Construct batch
         inputs = (u, (t, x))
         outputs = s
@@ -154,7 +155,7 @@ def generate_one_test_data(usol, idx, p_test=101):
     x = jnp.linspace(0, 1, p_test).reshape(p_test, 1)
 
     s = u.T.flatten()
-    u = jnp.tile(u0, (p_test, 1))
+    u = jnp.tile(u0, (p_test**2, 1))
 
     return u, t, x, s
 
@@ -212,7 +213,6 @@ def loss_res(model_fn, params, batch):
     # Fetch data
     inputs, _ = batch
     u, y = inputs
-    # Compute forward pass
     t, x = y
 
     # Residual PDE
@@ -376,6 +376,7 @@ def main_routine(args):
 
     # generate keys for Residuals
     res_keys = jax.random.split(keys[3], args.n_train)
+
 
     u_res_train, t_res_train, x_res_train = (jax.vmap(generate_one_res_training_data,
                                                       in_axes=(0, 0, None))
