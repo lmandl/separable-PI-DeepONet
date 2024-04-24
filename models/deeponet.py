@@ -11,6 +11,8 @@ class DeepONet(nn.Module):
     stacked: bool = False
     output_dim: int = 1
 
+    # TODO: split_branch, split_trunk, stacked and output_dim are not tested in the current implementation
+
     @nn.compact
     def __call__(self, branch_x, trunk_x):
 
@@ -85,7 +87,7 @@ class SeparableDeepONet(nn.Module):
     output_dim: int = 1
     r: int = 128
 
-    # TODO: split_branch, split_trunk and output_dim are not used/tested in the current implementation
+    # TODO: split_branch, split_trunk, stacked and output_dim are not used in the current implementation
 
     @nn.compact
     def __call__(self, branch_x, *trunk_x):
@@ -97,38 +99,15 @@ class SeparableDeepONet(nn.Module):
         trunk_x = [*trunk_x]
 
         # Branch network
-        # if stacked, then we have multiple branches
-        # Branch networks
-        if self.stacked:
-            branch_out = []
-            for j in range(self.branch_layers[-1]*self.r):
-                for i, fs in enumerate(self.branch_layers[:-1]):
-                    branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{j}_{i}")(branch_x)
-                    branch_x = nn.activation.tanh(branch_x)
-                branch_x = nn.Dense(1, name=f"branch_{j}_{i + 1}", kernel_init=init)(branch_x)
-                # no output activation
-                branch_out.append(branch_x)
-
-            # transform list of the output into [batch_size, p*output_dim]
-            # Combine the outputs of each branch into a JAX array
-            branch_x = jnp.reshape(jnp.array(branch_out), (-1, len(branch_out)))
-
-        # otherwise, we have a single branch
-        else:
-            for i, fs in enumerate(self.branch_layers[:-1]):
-                branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
-                branch_x = nn.activation.tanh(branch_x)
-            branch_x = nn.Dense(self.branch_layers[-1]*self.r, name=f"branch_{i + 1}", kernel_init=init)(branch_x)
-            # no output activation
+        for i, fs in enumerate(self.branch_layers[:-1]):
+            branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
+            branch_x = nn.activation.tanh(branch_x)
+        branch_x = nn.Dense(self.branch_layers[-1]*self.r, name=f"branch_{i + 1}", kernel_init=init)(branch_x)
+        # no output activation
 
         # reshape the output
-        # reshape from [batch_size, r*p*output_dim] to [batch_size, r, p, output_dim] if split_branch is True
-        if self.split_branch:
-            branch_x = jnp.reshape(branch_x, (-1, self.r,
-                                              branch_x.shape[1] // (self.r*self.output_dim), self.output_dim))
-        else:
-            # Reshape from [batch_size, r*p] to [batch_size, r, p, 1] if split_branch is false
-            branch_x = jnp.reshape(branch_x, (-1, self.r, branch_x.shape[1] // self.r, 1))
+        # Reshape from [batch_size, r*p] to [batch_size, r, p, 1] if split_branch is false
+        branch_x = jnp.reshape(branch_x, (-1, self.r, branch_x.shape[1] // self.r, 1))
 
         # Trunk network
         # we use a separable trunk, so we have one MLP for each trunk input dimension
@@ -138,29 +117,27 @@ class SeparableDeepONet(nn.Module):
 
         for j, x_i in enumerate(trunk_x):
             # for each input dimension, we have a separate trunk
-            for i, fs in enumerate(self.trunk_layers[1:-1]):
+            for i, fs in enumerate(self.trunk_layers[:-1]):
                 x_i = nn.Dense(fs, kernel_init=init, name=f"trunk_{i}_{j}")(x_i)
                 x_i = nn.activation.tanh(x_i)
             x_i = nn.Dense(self.trunk_layers[-1]*self.r, name=f"trunk_{i+1}_{j}", kernel_init=init)(x_i)
             x_i = nn.activation.tanh(x_i)
             # Note: SPINN does not use output activation
-            # reshape the output
 
-            if self.split_trunk:
-                raise NotImplementedError
-            else:
-                # Note: batch sizes are not necessarily the same for each input dimension
-                x_i = jnp.reshape(x_i, (-1, self.r, self.trunk_layers[-1], 1))
+            # reshape the output
+            # Note: batch sizes are not necessarily the same for each input dimension
+            x_i = jnp.reshape(x_i, (-1, self.r, self.trunk_layers[-1], 1))
 
             outputs += [x_i]
 
-        # we now calculate the einsum for each input dimension
+        # we now calculate the einsum for each input dimension over p
+        # note that batch_sizes may differ in the trunks
         net_outs = []
         for trunk_out in outputs:
             # Input shapes:
             # branch: [batch_size, r, p, output_dim]
             # trunk: [batch_size, r, p, output_dim]
-            # output: [output_dim, r, batch_size]
+            # output: [batch_size, r, output_dim]
             net_outs += [jnp.einsum('ijkl,ijkl->ijl', branch_x, trunk_out)]
 
         # at this point we have a list of outputs, one for each input dimension

@@ -24,22 +24,21 @@ def setup_deeponet(args, key):
     args.trunk_layers = [args.trunk_layers] if isinstance(args.trunk_layers, int) else args.trunk_layers
     args.branch_layers = [args.branch_layers] if isinstance(args.branch_layers, int) else args.branch_layers
 
-    # add input and output features to trunk and branch layers
+    # add output features to trunk and branch layers
     # split trunk if split_trunk is True
     if args.split_trunk:
-        trunk_layers = [args.trunk_input_features] + args.trunk_layers + [args.num_outputs * args.hidden_dim]
+        trunk_layers = args.trunk_layers + [args.num_outputs * args.hidden_dim]
     else:
-        trunk_layers = [args.trunk_input_features] + args.trunk_layers + [args.hidden_dim]
+        trunk_layers = args.trunk_layers + [args.hidden_dim]
 
     # Stacked or unstacked DeepONet
     # dimensions for splits are calculated once here before creating the model
-    # add input and output features to branch layers for unstacked DeepONet
+    # add output features to branch layers for unstacked DeepONet
     # if split_branch is True, the output features are split into n groups for n outputs
     if args.split_branch:
-        branch_layers = ([args.n_sensors * args.branch_input_features] +
-                         args.branch_layers + [args.num_outputs * args.hidden_dim])
+        branch_layers = args.branch_layers + [args.num_outputs * args.hidden_dim]
     else:
-        branch_layers = [args.n_sensors * args.branch_input_features] + args.branch_layers + [args.hidden_dim]
+        branch_layers = args.branch_layers + [args.hidden_dim]
 
     # Convert list to tuples
     trunk_layers = tuple(trunk_layers)

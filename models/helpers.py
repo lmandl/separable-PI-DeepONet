@@ -6,10 +6,11 @@ from functools import partial
 
 @partial(jax.jit)
 def mse(y_true, y_pred):
-    """
-    Computes the mean squared error between u and u_gt
-    """
     return jnp.mean(jnp.square(y_true - y_pred))
+
+@partial(jax.jit)
+def mse_single(y_pred):
+    return jnp.mean(jnp.square(y_pred))
 
 @partial(jax.jit, static_argnums=(0,))
 def apply_net(model_fn, params, branch_input, *trunk_in):
@@ -26,9 +27,6 @@ def apply_net_sep(model_fn, params, branch_input, *trunk_in):
     # Define forward pass for separable DeepONet that takes series of trunk inputs
     out = model_fn(params, branch_input, *trunk_in)
     # Reshape to vector for single output for easier gradient computation
-    test = out.shape
-    test2 = out.min()
-    test3 = out.max()
     out = jnp.squeeze(out)
     return out
     # TODO: Combine apply_net and apply_net_sep into one function

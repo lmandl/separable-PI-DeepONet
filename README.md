@@ -18,10 +18,12 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * include loss weighting as args
 * save model / checkpointing
 * Biot's equation of consolidation in 1D
+* inputs with several values per sensor in branch
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
+* include NTK based weighting schemes and improved architecture (https://doi.org/10.1007/s10915-022-01881-0)
 
 ### Data/Equations
 Project is focused on later use of physics-informed DeepONets for solving problems. Current plans are:
