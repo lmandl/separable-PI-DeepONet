@@ -149,6 +149,7 @@ class SeparableDeepONet(nn.Module):
         # trunk_outs has shape [batch_size1, batch_size2,..., batch_sizeN, p, output_dim]
         # we can flatten trunk_outs to [batch_size, p, output_dim]
         # p is inferred from branch_x.shape[1]
+        """
         shape_storage = trunk_outs.shape
         trunk_outs = jnp.reshape(trunk_outs, (-1, branch_x.shape[1], self.output_dim))
 
@@ -163,14 +164,14 @@ class SeparableDeepONet(nn.Module):
         trunk_out_args = [i+3 for i in range(len(trunk_outs.shape)-2)] + [0, 1]
         result_args = [2] + [i+3 for i in range(len(trunk_outs.shape)-2)] + [1]
         result = jnp.einsum(branch_x, [2, 0, 1], trunk_outs, trunk_out_args, result_args)
-        """
+
         # Add bias
         bias = self.param('output_bias', nn.initializers.zeros, (self.output_dim,))
         result += bias
 
         # CASE 1 #
         # Reshape the output to [batch_size1, batch_size2,..., batch_sizeN, output_dim]
-        result = jnp.reshape(result, shape_storage[:-2] +(self.output_dim,))
+        # result = jnp.reshape(result, shape_storage[:-2] +(self.output_dim,))
 
         return result
 

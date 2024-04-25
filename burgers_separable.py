@@ -15,7 +15,6 @@ import math
 from models import setup_deeponet, mse, mse_single, step, hvp_fwdfwd
 from models import apply_net_sep as apply_net
 
-
 # Data Generator
 class DataGeneratorIC(data.Dataset):
     # IC has same t for all samples in y
@@ -39,7 +38,7 @@ class DataGeneratorIC(data.Dataset):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
         s = self.s[idx, :]
-        x = self.x[idx, :]
+        x = self.x
         t = self.t
         u = self.u[idx, :]
         # Construct batch
@@ -50,11 +49,11 @@ class DataGeneratorIC(data.Dataset):
 
 class DataGeneratorBC(data.Dataset):
     # IC has same t for all samples in y
-    def __init__(self, u, t, x, s, batch_size, gen_key):
+    def __init__(self, u, x, s, batch_size, gen_key, p_bc):
         self.u = u
         self.x = x
-        self.t = t
         self.s = s
+        self.p_bc = p_bc
         self.N = u.shape[0]
         self.batch_size = batch_size
         self.key = gen_key
@@ -62,16 +61,17 @@ class DataGeneratorBC(data.Dataset):
     def __getitem__(self, index):
         """Generate one batch of data"""
         self.key, subkey = jax.random.split(self.key)
-        inputs, outputs = self.__data_generation(subkey)
+        self.key, subkey2 = jax.random.split(self.key)
+        inputs, outputs = self.__data_generation(subkey, subkey2)
         return inputs, outputs
 
     @partial(jax.jit, static_argnums=(0,))
-    def __data_generation(self, key_i):
+    def __data_generation(self, key_i, key_t):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
         s = self.s[idx, :]
         x = self.x
-        t = self.t[idx, :]
+        t = jax.random.uniform(key_t, (self.p_bc, 1))
         u = self.u[idx, :]
         # Construct batch
         inputs = (u, (t, x))
@@ -81,69 +81,37 @@ class DataGeneratorBC(data.Dataset):
 
 class DataGeneratorRes(data.Dataset):
 
-    def __init__(self, u, t, x, s, batch_size, gen_key):
+    def __init__(self, u, s, batch_size, gen_key, p_res):
         self.u = u
-        self.x = x
-        self.t = t
         self.s = s
+        self.p_res = p_res
         self.N = u.shape[0]
-        # batch size needs integer square root to be applicable in residual sampling
-        # as we have an outer product of x and t later
-        self.batch_size = math.isqrt(batch_size)
+        self.batch_size = batch_size
         self.key = gen_key
 
     def __getitem__(self, index):
         """Generate one batch of data"""
         self.key, subkey = jax.random.split(self.key)
-        inputs, outputs = self.__data_generation(subkey)
+        self.key, subkey2 = jax.random.split(self.key)
+        self.key, subkey3 = jax.random.split(self.key)
+        inputs, outputs = self.__data_generation(subkey, subkey2, subkey3)
         return inputs, outputs
 
     @partial(jax.jit, static_argnums=(0,))
-    def __data_generation(self, key_i):
+    def __data_generation(self, key_i, key_x, key_t):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
         s = jnp.tile(self.s, (self.batch_size, self.batch_size))
-        x = self.x[idx, :]
-        t = self.t[idx, :]
-        u = self.u[idx, :] # has shape (batch_size, n_sensors) but needs to be (batch_size**2, n_sensors)
-        u = jnp.tile(u, (self.batch_size, 1))
+
+        u = self.u[idx, :]
+
+        t = jax.random.uniform(key_t, (self.p_res, 1))
+        x = jax.random.uniform(key_x, (self.p_res, 1))
+
         # Construct batch
         inputs = (u, (t, x))
         outputs = s
         return inputs, outputs
-
-
-# Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(u0, p=101):
-    x = jnp.linspace(0, 1, p)[:, None]
-
-    u = jnp.tile(u0, (p, 1))
-    s = u0
-
-    return u, x, s
-
-
-# Generate bcs training data corresponding to one input sample
-def generate_one_bcs_training_data(key, u0, p=100):
-    t = jax.random.uniform(key, (p, 1))
-
-    u = jnp.tile(u0, (p, 1))
-    s = jnp.zeros((p, 1))
-
-    return u, t, s
-
-
-# Generate res training data corresponding to one input sample
-def generate_one_res_training_data(key, u0, p=1000):
-    subkeys = jax.random.split(key, 2)
-
-    t = jax.random.uniform(subkeys[0], (p, 1))
-    x = jax.random.uniform(subkeys[1], (p, 1))
-
-    u = jnp.tile(u0, (p, 1))
-
-    return u, t, x
-
 
 # Generate test data corresponding to one input sample
 def generate_one_test_data(usol, idx, p_test=101):
@@ -155,7 +123,7 @@ def generate_one_test_data(usol, idx, p_test=101):
     x = jnp.linspace(0, 1, p_test).reshape(p_test, 1)
 
     s = u.T.flatten()
-    u = jnp.tile(u0, (p_test**2, 1))
+    u = u0.reshape(1,-1)
 
     return u, t, x, s
 
@@ -177,7 +145,7 @@ def loss_ics(model_fn, params, ics_batch):
     s_pred = apply_net(model_fn, params, u, t, x)
 
     # Compute loss
-    loss_ic = mse(outputs.flatten(), s_pred)
+    loss_ic = mse(outputs.flatten(), s_pred.flatten())
     return loss_ic
 
 
@@ -202,8 +170,8 @@ def loss_bcs(model_fn, params, bcs_batch):
 
     # Compute loss
     # changed for training
-    loss_s_bc = mse(s_bc1_pred, s_bc2_pred)
-    loss_s_x_bc = mse(s_x_bc1_pred, s_x_bc2_pred)
+    loss_s_bc = mse(s_bc1_pred.flatten(), s_bc2_pred.flatten())
+    loss_s_x_bc = mse(s_x_bc1_pred.flatten(), s_x_bc2_pred.flatten())
 
     return loss_s_bc + loss_s_x_bc
 
@@ -226,7 +194,7 @@ def loss_res(model_fn, params, batch):
 
     pred = s_t + s * s_x - 0.01 * s_xx
     # Compute loss
-    loss = mse_single(pred)
+    loss = mse_single(pred.flatten())
     return loss
 
 
@@ -275,7 +243,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     plt.tight_layout()
 
     plt.subplot(1, 3, 2)
-    plt.imshow(s_pred, interpolation="nearest", vmin=jnp.amin(u), vmax=jnp.amax(u),
+    plt.imshow(s_pred, interpolation="nearest", #vmin=jnp.amin(u), vmax=jnp.amax(u),
                extent=[t.min(), t.max(), x.max(), x.min()],
                origin='upper', aspect='auto', cmap='viridis')
     plt.xlabel('t')
@@ -326,77 +294,48 @@ def main_routine(args):
 
     u0_train = u_sol[:args.n_train, 0, :]  # input samples
 
-    # Check if batch size can be used in residual sampling, i.e., has integer square root
-    if jnp.sqrt(args.batch_size) % 1 != 0:
-        raise ValueError('Batch size needs to have an integer square root for residual sampling')
-
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 6)
+    keys = jax.random.split(key, 4)
 
     # ICs data
-    u_ics_train, x_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
-                                                      in_axes=(0, None))
-                                             (u0_train, args.p_ics_train))
+    u_ics_train = u0_train
+    s_ics_train = u0_train
     # t sampled just once
     t_ics_train = jnp.zeros((1, 1))
-
-    u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
-    x_ics_train = x_ics_train.reshape(args.n_train * args.p_ics_train, -1)
-    s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
+    x_ics_train = jnp.linspace(0, 1, args.p_ics_train)[:, None]
 
     # Create data generator
-    ics_dataset = DataGeneratorIC(u_ics_train, t_ics_train, x_ics_train, s_ics_train, args.batch_size, keys[0])
+    ics_dataset = DataGeneratorIC(u0_train, t_ics_train, x_ics_train, s_ics_train, args.batch_size, keys[0])
 
     # BCs data
     # Init empty arrays for storage
     # generate keys for BCs
-    bc_keys = jax.random.split(keys[1], args.n_train)
-
-    u_bcs_train, t_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (bc_keys, u0_train, args.p_bcs_train))
+    s_bcs_train = jnp.zeros((1, 1))
 
     x_bc1_train = jnp.zeros((1, 1))
     x_bc2_train = jnp.ones((1, 1))
     x_bc_train = (x_bc1_train, x_bc2_train)
 
-    u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
-    t_bcs_train = t_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
-    s_bcs_train = s_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
-
     # Create data generator
-    # Normally, this would require differentiating between BC1 and BC2
-    # However, as s=0 for both, we can use the same data generator
-    bcs_dataset = DataGeneratorBC(u_bcs_train, t_bcs_train, x_bc_train, s_bcs_train, args.batch_size, keys[2])
+    bcs_dataset = DataGeneratorBC(u0_train, x_bc_train, s_bcs_train, args.batch_size, keys[1], args.p_bcs_train)
     # Note: p_bcs_train can be halved as one sample from t is used for both BCs
 
     # Residual data
-
     # generate keys for Residuals
-    res_keys = jax.random.split(keys[3], args.n_train)
-
-
-    u_res_train, t_res_train, x_res_train = (jax.vmap(generate_one_res_training_data,
-                                                      in_axes=(0, 0, None))
-                                             (res_keys, u0_train, args.p_res_train))
 
     s_res_train = jnp.zeros((1, 1))
 
-    u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
-    x_res_train = x_res_train.reshape(args.n_train * args.p_res_train, -1)
-    t_res_train = t_res_train.reshape(args.n_train * args.p_res_train, -1)
-
     # Create data generators
-    res_dataset = DataGeneratorRes(u_res_train, t_res_train, x_res_train, s_res_train, args.batch_size, keys[4])
+    res_dataset = DataGeneratorRes(u0_train, s_res_train, args.batch_size, keys[2], args.p_res_train)
 
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
-    test_idx = jax.random.choice(keys[5], test_range, (args.n_test,), replace=False)
+    test_idx = jax.random.choice(keys[3], test_range, (args.n_test,), replace=False)
 
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[6])
+    args, model, model_fn, params = setup_deeponet(args, keys[4])
 
     # Define optimizer with optax (ADAM)
     optimizer = optax.adam(learning_rate=args.lr)
@@ -536,8 +475,8 @@ if __name__ == "__main__":
                         help='a directory to save results, relative to cwd')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
-    parser.add_argument('--vis_iter', type=int, default=10000, help='iteration to save visualization')
+    parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
+    parser.add_argument('--vis_iter', type=int, default=5000, help='iteration to save visualization')
 
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000,
@@ -553,9 +492,8 @@ if __name__ == "__main__":
                         help='number of locations for evaluating the PDE residual')
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
-    # batch size needs integer square root to be applicable in residual sampling
-    parser.add_argument('--batch_size', type=int, default=10000,
-                        help='batch size,needs integer square root')
+    parser.add_argument('--batch_size', type=int, default=200,
+                        help='batch size')
 
     args_in = parser.parse_args()
 
