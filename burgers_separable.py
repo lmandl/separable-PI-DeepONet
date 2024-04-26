@@ -492,7 +492,7 @@ if __name__ == "__main__":
                         help='number of locations for evaluating the PDE residual')
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
-    parser.add_argument('--batch_size', type=int, default=200,
+    parser.add_argument('--batch_size', type=int, default=1000,
                         help='batch size')
 
     args_in = parser.parse_args()
