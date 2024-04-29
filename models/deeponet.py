@@ -135,43 +135,22 @@ class SeparableDeepONet(nn.Module):
         trunk_outs = trunk_r_einsum(outputs)
 
         # trunk_outs has shape [batch_size1, batch_size2,..., batch_sizeN, p, output_dim]
-        # Basically, we have two options for merging with the branch output:
-        # TODO: Decide for variants, testing with case 1 for now
-        # TODO: Case 2 might be more efficient, but needs testing (single pass through branch)
-        # TODO: Might be able to restructure DeepONet to predefine outputs, then do calls of subclasses & einsums
-        # 1. We need a match in input batch sizes between branch and trunk and flatten trunk or
-        # reshape the branch to match the trunk
-        # 2. We have different input batches for the trunk and branch and then obtain a tensor of shape
+        # We have different input batches for the trunk and branch and then obtain a tensor of shape
         # [batch_branch, batch_size1, batch_size2,..., batch_sizeN, output_dim]
 
-        # CASE 1 #
-        # branch_x has shape [batch_size, p, output_dim]
-        # trunk_outs has shape [batch_size1, batch_size2,..., batch_sizeN, p, output_dim]
-        # we can flatten trunk_outs to [batch_size, p, output_dim]
-        # p is inferred from branch_x.shape[1]
-        """
-        shape_storage = trunk_outs.shape
-        trunk_outs = jnp.reshape(trunk_outs, (-1, branch_x.shape[1], self.output_dim))
-
-        # Compute the final output as sum over p
-        result = jnp.einsum('ijk,ijk->ik', branch_x, trunk_outs)
-
-        # CASE 2 #
+        # Create arguments for einsum
         # branch_x has shape [batch_size_b, p, output_dim]
         # trunk_outs has shape [batch_size1, batch_size2,..., batch_sizeN, p, output_dim]
         # Create einsum arguments (p=0, output_dim=1, input_batches_branch=2, input_batches_trunk =3,4,..)
-        """
         trunk_out_args = [i+3 for i in range(len(trunk_outs.shape)-2)] + [0, 1]
         result_args = [2] + [i+3 for i in range(len(trunk_outs.shape)-2)] + [1]
+
+        # apply einsum
         result = jnp.einsum(branch_x, [2, 0, 1], trunk_outs, trunk_out_args, result_args)
 
         # Add bias
         bias = self.param('output_bias', nn.initializers.zeros, (self.output_dim,))
         result += bias
-
-        # CASE 1 #
-        # Reshape the output to [batch_size1, batch_size2,..., batch_sizeN, output_dim]
-        # result = jnp.reshape(result, shape_storage[:-2] +(self.output_dim,))
 
         return result
 

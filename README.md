@@ -12,27 +12,19 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 
 #### Current TODOs
-* fix consistency for the use of p_ics_train, p_bcs_train, p_res_train, and p_test and make it compatible with sampling from a predefined grid
+* save model / checkpointing
+* Biot's equation of consolidation in 1D
+  * split of branch and trunk as well as stacked DeepONets implementation and testing
+* fracture mechanics examples
 
 #### Upcoming Tasks
 * include loss weighting as args
-* save model / checkpointing
-* Biot's equation of consolidation in 1D
 * inputs with several values per sensor in branch
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 * include NTK based weighting schemes and improved architecture (https://doi.org/10.1007/s10915-022-01881-0)
-
-### Data/Equations
-Project is focused on later use of physics-informed DeepONets for solving problems. Current plans are:
-* Biot's equation of consolidation in 1D
-* fracture mechanics example
-
-Upcoming examples:
-* theory of porous media (TPM) for consolidation in 1D
-* 2D Consolidation using Biot / TPM
 
 #### Note on dimensions
 Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time t as input.
