@@ -87,7 +87,8 @@ class SeparableDeepONet(nn.Module):
     output_dim: int = 1
     r: int = 128
 
-    # TODO: split_branch, split_trunk, stacked and output_dim are not used in the current implementation
+    # TODO: split_branch, split_trunk and output_dim are not implemented
+    # TODO: stacked DeepONets are not tested in the current implementation
 
     @nn.compact
     def __call__(self, branch_x, *trunk_x):
@@ -99,15 +100,37 @@ class SeparableDeepONet(nn.Module):
         trunk_x = [*trunk_x]
 
         # Branch network
-        for i, fs in enumerate(self.branch_layers[:-1]):
-            branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
-            branch_x = nn.activation.tanh(branch_x)
-        branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{i + 1}", kernel_init=init)(branch_x)
-        # no output activation
+        # if stacked, then we have multiple branches
+        # Branch networks
+        if self.stacked:
+            branch_out = []
+            for j in range(self.branch_layers[-1]):
+                for i, fs in enumerate(self.branch_layers[:-1]):
+                    branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{j}_{i}")(branch_x)
+                    branch_x = nn.activation.tanh(branch_x)
+                branch_x = nn.Dense(1, name=f"branch_{j}_{i+1}", kernel_init=init)(branch_x)
+                # no output activation
+                branch_out.append(branch_x)
 
-        # reshape the output
-        # Reshape from [batch_size, p] to [batch_size, p, 1] if split_branch is false
-        branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1], 1))
+            # transform list of the output into [batch_size, p*output_dim]
+            # Combine the outputs of each branch into a JAX array
+            branch_x = jnp.reshape(jnp.array(branch_out), (-1, len(branch_out)))
+
+        # otherwise, we have a single branch
+        else:
+            for i, fs in enumerate(self.branch_layers[:-1]):
+                branch_x = nn.Dense(fs, kernel_init=init, name=f"branch_{i}")(branch_x)
+                branch_x = nn.activation.tanh(branch_x)
+            branch_x = nn.Dense(self.branch_layers[-1], name=f"branch_{i + 1}", kernel_init=init)(branch_x)
+            # no output activation
+
+            # reshape the output
+            # reshape from [batch_size, p*output_dim] to [batch_size, p, output_dim] if split_branch is True
+            if self.split_branch:
+                branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1] // self.output_dim, self.output_dim))
+            else:
+                # reshape from [batch_size, p] to [batch_size, p, 1] if split_branch is false
+                branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1], 1))
 
         # Trunk network
         # we use a separable trunk, so we have one MLP for each trunk input dimension

@@ -471,7 +471,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
 
     # result directory
-    parser.add_argument('--result_dir', type=str, default='results/separable',
+    parser.add_argument('--result_dir', type=str, default='results/burgers/separable',
                         help='a directory to save results, relative to cwd')
 
     # log settings

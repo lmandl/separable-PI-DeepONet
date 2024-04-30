@@ -5,7 +5,6 @@ from functools import partial
 import tqdm
 import time
 import optax
-import scipy.io
 import os
 import argparse
 import matplotlib.pyplot as plt
@@ -13,6 +12,9 @@ import shutil
 
 from models import setup_deeponet, mse, mse_single, apply_net, step
 
+# This file implements an example for Biot's theory of consolidation using DeepONets
+# We sample the displacement at z=0 in t=[0,1] as branch input
+# trunk input is [t, z] and stacked output is [u, p]
 
 # Data Generator
 class DataGenerator(data.Dataset):
@@ -44,29 +46,39 @@ class DataGenerator(data.Dataset):
 
 
 # Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(u0, p=101):
+def generate_one_ics_training_data(key, u0, p=101):
     t_0 = jnp.zeros((p, 1))
-    x_0 = jnp.linspace(0, 1, p)[:, None]
+    z_0 = jax.random.uniform(key, (p, 1))
 
-    y = jnp.hstack([t_0, x_0])
+    y = jnp.hstack([t_0, z_0])
     u = jnp.tile(u0, (p, 1))
-    s = u0
+    # u(0,z) = 0, p(0, z) = 0
+    s = jnp.tile(jnp.zeros((1, )), (p, 2))
 
     return u, y, s
 
 
 # Generate bcs training data corresponding to one input sample
-def generate_one_bcs_training_data(key, u0, p=100):
-    t_bc = jax.random.uniform(key, (p, 1))
-    x_bc1 = jnp.zeros((p, 1))
-    x_bc2 = jnp.ones((p, 1))
+def generate_one_bcs_training_data(u0, p=101):
+    t_bc = jnp.linspace(0, 1, p)[:, None]
+    z_bc1 = jnp.zeros((p, 1))
+    z_bc2 = jnp.ones((p, 1))
 
-    y1 = jnp.hstack([t_bc, x_bc1])  # shape = (P, 2)
-    y2 = jnp.hstack([t_bc, x_bc2])  # shape = (P, 2)
+    y1 = jnp.hstack([t_bc, z_bc1])  # shape = (P, 2)
+    y2 = jnp.hstack([t_bc, z_bc2])  # shape = (P, 2)
 
     u = jnp.tile(u0, (p, 1))
     y = jnp.hstack([y1, y2])  # shape = (P, 4)
-    s = jnp.zeros((p, 1))
+
+    # u(t, 0) = u0, p(t, 0) = 0
+    s_1 = u0
+    s_2 = jnp.zeros((p, 1))
+
+    # u(t, 1) = 0, p_z(t, 1) = 0
+    s_3 = jnp.zeros((p, 1))
+    s_4 = jnp.zeros((p, 1))
+
+    s = jnp.hstack([s_1, s_2, s_3, s_4]) # shape = (P, 4)
 
     return u, y, s
 
@@ -76,37 +88,39 @@ def generate_one_res_training_data(key, u0, p=1000):
     subkeys = jax.random.split(key, 2)
 
     t_res = jax.random.uniform(subkeys[0], (p, 1))
-    x_res = jax.random.uniform(subkeys[1], (p, 1))
+    z_res = jax.random.uniform(subkeys[1], (p, 1))
 
     u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([t_res, x_res])
-    s = jnp.zeros((p, 1))
+    y = jnp.hstack([t_res, z_res])
+    s = jnp.zeros((p, 2))
 
     return u, y, s
 
 
 # Generate test data corresponding to one input sample
 def generate_one_test_data(usol, idx, p_test=101):
-
+    # Check if this is the right dimension to get u0 at z=0
     u = usol[idx]
-    u0 = u[0, :]
+    u0 = u[0, :, 0]
 
     t = jnp.linspace(0, 1, p_test)
-    x = jnp.linspace(0, 1, p_test)
-    t_mesh, x_mesh = jnp.meshgrid(t, x)
+    z = jnp.linspace(0, 1, p_test)
+    t_mesh, z_mesh = jnp.meshgrid(t, z)
 
-    s = u.T.flatten()
+    s_1 = u[:, :, 0].T.flatten()  # u
+    s_2 = u[:, :, 1].T.flatten()  # p
+    s = jnp.hstack([s_1[:, None], s_2[:, None]])
     u = jnp.tile(u0, (p_test ** 2, 1))
-    y = jnp.hstack([t_mesh.flatten()[:, None], x_mesh.flatten()[:, None]])
+    y = jnp.hstack([t_mesh.flatten()[:, None], z_mesh.flatten()[:, None]])
 
     return u, y, s
 
 
-# Define ds/dx
-def s_x_net(model_fn, params, u, t, x):
-    v_x = jnp.ones(x.shape)
-    s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
-    return s_x
+# Define ds/dz
+def p_z_net(model_fn, params, u, t, z):
+    v_z = jnp.ones(z.shape)
+    p_z = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1], z)[1](v_z)[0]
+    return p_z
 
 
 def loss_ics(model_fn, params, ics_batch):
@@ -115,63 +129,80 @@ def loss_ics(model_fn, params, ics_batch):
 
     # Compute forward pass
     t = y[:, 0]
-    x = y[:, 1]
-    s_pred = apply_net(model_fn, params, u, t, x)
+    z = y[:, 1]
+    s_pred = apply_net(model_fn, params, u, t, z)
 
     # Compute loss
-    loss_ic = mse(outputs.flatten(), s_pred)
-    return loss_ic
+    loss_ic_u = mse(outputs[:, 0].flatten(), s_pred[:, 0])
+    loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])
+    return loss_ic_u + loss_ic_p
 
 
 def loss_bcs(model_fn, params, bcs_batch):
     # Fetch data
-    inputs, _ = bcs_batch
+    inputs, outputs = bcs_batch
     u, y = inputs
 
     # Compute forward pass
     s_bc1_pred = apply_net(model_fn, params, u, y[:, 0], y[:, 1])
     s_bc2_pred = apply_net(model_fn, params, u, y[:, 2], y[:, 3])
 
-    s_x_bc1_pred = s_x_net(model_fn, params, u, y[:, 0], y[:, 1])
-    s_x_bc2_pred = s_x_net(model_fn, params, u, y[:, 2], y[:, 3])
+    v_z = jnp.ones(y[:, 3].shape)
+    s_z_bc2_pred = jax.vjp(lambda z: apply_net(model_fn, params, u, y[:, 2], z)[:, 1], y[:, 3])[1](v_z)[0]
 
     # Compute loss
+    loss_s_bc_1_u = mse(s_bc1_pred[:, 0], outputs[:, 0]) # u(t, 0) = u0
+    loss_s_bc_1_p = mse(s_bc1_pred[:, 1], outputs[:, 1]) # p(t, 0) = 0
+    loss_s_bc_2_u = mse(s_bc2_pred[:, 0], outputs[:, 2]) # u(t, 1) = 0
+    loss_s_bc_2_p = mse(s_z_bc2_pred, outputs[:, 3]) # p_z(t, 1) = 0
 
-    loss_s_bc = mse(s_bc1_pred, s_bc2_pred)
-    loss_s_x_bc = mse(s_x_bc1_pred, s_x_bc2_pred)
-
-    return loss_s_bc + loss_s_x_bc
+    return loss_s_bc_1_u + loss_s_bc_1_p + loss_s_bc_2_u + loss_s_bc_2_p
 
 
 # Define residual loss
 def loss_res(model_fn, params, batch):
+    # parameters
+    lamda = 1
+    mu = 1
+    k = 1
+    rho = 1
+    g = 1
+
     # Fetch data
     inputs, _ = batch
     u, y = inputs
     # Compute forward pass
     t = y[:, 0]
-    x = y[:, 1]
+    z = y[:, 1]
 
     # Residual PDE
-    s = apply_net(model_fn, params, u, t, x)
-    v_x = jnp.ones(x.shape)
+    v_z = jnp.ones(z.shape)
     v_t = jnp.ones(t.shape)
 
-    s_t = jax.vjp(lambda t: apply_net(model_fn, params, u, t, x), t)[1](v_t)[0]
-    s_x = jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0]
-    s_xx = jax.jvp(lambda x: jax.vjp(lambda x: apply_net(model_fn, params, u, t, x), x)[1](v_x)[0], (x,), (v_x,))[1]
+    # Compute gradients
+    p_z = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1], z)[1](v_z)[0]
+    p_zz = jax.jvp(lambda z: jax.vjp(lambda xz: apply_net(model_fn, params, u, t, z)[:, 1],
+                                     z)[1](v_z)[0], (z,), (v_z,))[1]
+    u_tz = jax.jvp(lambda t: jax.vjp(lambda x: apply_net(model_fn, params, u, t, x)[:, 0],
+                                    z)[1](v_z)[0], (t,), (v_t,))[1]
+    u_zz = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 0], z)[1](v_z)[0]
 
-    pred = s_t + s * s_x - 0.01 * s_xx
+    # Compute PDEs
+    pred_1 = (lamda + 2 * mu) * u_zz - p_z
+    pred_2 = u_tz - (k / (rho * g)) * p_zz
+
     # Compute loss
-    loss = mse_single(pred)
-    return loss
+    loss_pred_1 = mse_single(pred_1)
+    loss_pred_2 = mse_single(pred_2)
+
+    return loss_pred_1 + loss_pred_2
 
 
 def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = 20 * loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = loss_ics_i + 20*loss_bcs_i + loss_res_i
     return loss_value
 
 
@@ -179,9 +210,9 @@ def get_error(model_fn, params, u_sol, idx, p_err=101, return_data=False):
     u_test, y_test, s_test = generate_one_test_data(u_sol, idx, p_err)
 
     t_test = y_test[:, 0]
-    x_test = y_test[:, 1]
+    z_test = y_test[:, 1]
 
-    s_pred = apply_net(model_fn, params, u_test, t_test, x_test)
+    s_pred = apply_net(model_fn, params, u_test, t_test, z_test)
     error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
 
     if return_data:
@@ -194,44 +225,75 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     # Generate data, and obtain error
     error_s, s_pred = get_error(model_fn, params, usol, idx, args.p_test, return_data=True)
 
-    u = usol[idx].T
+    u = usol[idx, :, :, 0]
+    p = usol[idx, :, :, 1]
 
     t = jnp.linspace(0, 1, args.p_test)
-    x = jnp.linspace(0, 1, args.p_test)
+    z = jnp.linspace(0, 1, args.p_test)
 
     # Reshape s_pred
-    s_pred = s_pred.reshape(t.shape[0], x.shape[0])
+    u_pred = s_pred[:, 0].reshape(t.shape[0], z.shape[0])
+    p_pred = s_pred[:, 1].reshape(t.shape[0], z.shape[0])
 
-    fig = plt.figure(figsize=(18, 5))
-    plt.subplot(1, 3, 1)
-    plt.imshow(u, interpolation="nearest", vmin=jnp.amin(u), vmax=jnp.amax(u),
-               extent=[t.min(), t.max(), x.max(), x.min()],
+    fig = plt.figure(figsize=(12, 4))
+    plt.subplot(2, 3, 1)
+    plt.imshow(u, interpolation='nearest', vmin=jnp.amin(u), vmax=jnp.amax(u), \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
                origin='upper', aspect='auto', cmap='viridis')
-    plt.xlabel('t')
-    plt.ylabel('x')
-    plt.title('Exact u')
-    plt.colorbar()
-    plt.tight_layout()
+    cbar = plt.colorbar()
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$u(z,t)$')
 
-    plt.subplot(1, 3, 2)
-    plt.imshow(s_pred, interpolation="nearest", vmin=jnp.amin(u), vmax=jnp.amax(u),
-               extent=[t.min(), t.max(), x.max(), x.min()],
+    plt.subplot(2, 3, 2)
+    plt.imshow(u_pred, interpolation='nearest', vmin=jnp.amin(u), vmax=jnp.amax(u), \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
                origin='upper', aspect='auto', cmap='viridis')
-    plt.xlabel('t')
-    plt.ylabel('x')
-    plt.title('Predicted u')
-    plt.colorbar()
-    plt.tight_layout()
+    cbar = plt.colorbar()
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$\hat{u}(z,t)$')
 
-    u_diff = u-s_pred
-    plt.subplot(1, 3, 3)
-    plt.imshow(u_diff, interpolation="nearest", vmin=abs(u_diff).max(), vmax=-abs(u_diff).max(),
-               extent=[t.min(), t.max(), x.max(), x.min()],
-               origin='upper', aspect='auto', cmap='seismic')
-    plt.xlabel('t')
-    plt.ylabel('x')
-    plt.title('Absolute error')
-    plt.colorbar()
+    plt.subplot(2, 3, 3)
+    plt.imshow(u_pred - u, interpolation='nearest', \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
+               origin='upper', aspect='auto', cmap='seismic',
+               vmax=abs(u_pred - u).max(), vmin=-abs(u_pred - u).max())
+    cbar = plt.colorbar()
+    cbar.formatter.set_powerlimits((0, 0))
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$u-\hat{u}$')
+
+    plt.subplot(2, 3, 4)
+    plt.imshow(p, interpolation='nearest', vmin=jnp.amin(p), vmax=jnp.amax(p), \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
+               origin='upper', aspect='auto', cmap='plasma')
+    cbar = plt.colorbar()
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$p(z,t)$')
+
+    plt.subplot(2, 3, 5)
+    plt.imshow(p_pred, interpolation='nearest', vmin=jnp.amin(p), vmax=jnp.amax(p), \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
+               origin='upper', aspect='auto', cmap='plasma')
+    cbar = plt.colorbar()
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$\hat{p}(z,t)$')
+
+
+    plt.subplot(2, 3, 6)
+    plt.imshow(p_pred - p, interpolation='nearest', \
+               extent=[t.min(), t.max(), z.max(), z.min()], \
+               origin='upper', aspect='auto', cmap='PuOr',
+               vmax=abs(p_pred - p).max(), vmin=-abs(p_pred - p).max())
+    cbar = plt.colorbar()
+    cbar.formatter.set_powerlimits((0, 0))
+    plt.xlabel('$t$')
+    plt.ylabel('$z$')
+    plt.title('$p-\hat{p}$')
 
     if test:
         plt.suptitle(f'test, L2: {error_s:.3e}')
@@ -250,10 +312,18 @@ def main_routine(args):
         raise ValueError('Needs normal DeepONet, not separable DeepONet')
     # Prepare the training data
     # Load data
-    path = os.path.join(os.getcwd(), 'data/burgers/Burger.mat')  # Please use the matlab script to generate data
+    path = os.path.join(os.getcwd(), 'data/biot/Y.npy')  # Please use the matlab script to generate data
 
-    data_ref = scipy.io.loadmat(path)
-    u_sol = jnp.array(data_ref['output'])
+    u_sol = jnp.load(path)
+
+    n_in = u_sol.shape[0]  # number of total input samples
+    n_test = n_in - args.n_train  # number of input samples used for test
+    if n_test < args.n_test:
+        raise ValueError('Not enough data for testing, please reduce the number of test samples'
+                         ' or increase the number of training samples.')
+
+    u0_train = u_sol[:args.n_train, 0, :]  # input samples
+
 
     n_in = u_sol.shape[0]  # number of total input samples
     n_test = n_in - args.n_train  # number of input samples used for test
@@ -269,18 +339,18 @@ def main_routine(args):
     keys = jax.random.split(key, 7)
 
     # ICs data
+    ic_keys = jax.random.split(keys[0], args.n_train)
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
                                                       in_axes=(0, None))
-                                             (u0_train, args.p_ics_train))
+                                             (ic_keys, u0_train, args.p_ics_train))
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
 
     # BCs data
-    bc_keys = jax.random.split(keys[0], args.n_train)
     u_bcs_train, y_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
                                                       in_axes=(0, 0, None))
-                                             (bc_keys, u0_train, args.p_bcs_train))
+                                             (u0_train, args.p_bcs_train))
 
     u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
     y_bcs_train = y_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
@@ -410,8 +480,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # model settings
-    parser.add_argument('--num_outputs', type=int, default=1, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=32,
+    parser.add_argument('--num_outputs', type=int, default=2, help='number of outputs')
+    parser.add_argument('--hidden_dim', type=int, default=64,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
@@ -420,35 +490,35 @@ if __name__ == "__main__":
     parser.add_argument('--r', type=int, default=0, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=int, nargs="+", default=[32, 32, 32],
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=[64, 64, 64],
                         help='hidden branch layer sizes')
     parser.add_argument('--n_sensors', type=int, default=101,
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features per sensor to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_false',
+    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[32, 32, 32],
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[64, 64, 64],
                         help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2,
                         help='number of input features to trunk network')
-    parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
+    parser.add_argument('--split_trunk', dest='split_trunk', default=True, action='store_false',
                         help='split trunk outputs into j groups for j outputs')
 
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
 
     # result directory
-    parser.add_argument('--result_dir', type=str, default='results/burgers/normal/',
+    parser.add_argument('--result_dir', type=str, default='results/biot/normal/',
                         help='a directory to save results, relative to cwd')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
-    parser.add_argument('--vis_iter', type=int, default=10000, help='iteration to save visualization')
+    parser.add_argument('--log_iter', type=int, default=1, help='iteration to save loss and error')
+    parser.add_argument('--vis_iter', type=int, default=500, help='iteration to save visualization')
 
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000,
@@ -456,7 +526,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_test', type=int, default=50, help='number of samples used for testing')
     parser.add_argument('--p_ics_train', type=int, default=101,
                         help='number of locations for evaluating the initial condition')
-    parser.add_argument('--p_bcs_train', type=int, default=100,
+    parser.add_argument('--p_bcs_train', type=int, default=101,
                         help='number of locations for evaluating the boundary condition')
     parser.add_argument('--p_res_train', type=int, default=2500,
                         help='number of locations for evaluating the PDE residual')

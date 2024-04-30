@@ -20,6 +20,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 #### Upcoming Tasks
 * include loss weighting as args
 * inputs with several values per sensor in branch
+* Review usage of p_** throughout the code
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
