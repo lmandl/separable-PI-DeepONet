@@ -11,8 +11,6 @@ class DeepONet(nn.Module):
     stacked: bool = False
     output_dim: int = 1
 
-    # TODO: split_branch, split_trunk, stacked and output_dim are not tested in the current implementation
-
     @nn.compact
     def __call__(self, branch_x, trunk_x):
 
@@ -48,7 +46,7 @@ class DeepONet(nn.Module):
         if self.split_branch:
             branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1] // self.output_dim, self.output_dim))
         else:
-            # reshape from [batch_size, p] to [batch_size, p, 1] if split_branch is false
+        # reshape from [batch_size, p] to [batch_size, p, 1] if split_branch is false
             branch_x = jnp.reshape(branch_x, (-1, branch_x.shape[1], 1))
 
         # Trunk network

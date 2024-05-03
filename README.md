@@ -13,6 +13,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 
 #### Current TODOs
 * save model / checkpointing
+* optimizer decay / scheduler
 * Biot's equation of consolidation in 1D
   * split of branch and trunk as well as stacked DeepONets implementation and testing
 * fracture mechanics examples
@@ -26,6 +27,7 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 * include NTK based weighting schemes and improved architecture (https://doi.org/10.1007/s10915-022-01881-0)
+* L2 relative error loss functions
 
 #### Note on dimensions
 Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time t as input.

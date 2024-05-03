@@ -46,14 +46,16 @@ class DataGenerator(data.Dataset):
 
 
 # Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(key, u0, p=101):
+def generate_one_ics_training_data(key, u0, p0, p=101):
     t_0 = jnp.zeros((p, 1))
     z_0 = jax.random.uniform(key, (p, 1))
 
     y = jnp.hstack([t_0, z_0])
     u = jnp.tile(u0, (p, 1))
-    # u(0,z) = 0, p(0, z) = 0
-    s = jnp.tile(jnp.zeros((1, )), (p, 2))
+    # u(0,z) = 0, p(0, z) = f(0)
+    u_0_z = jnp.zeros((p, 1))
+    p_0_z = jnp.tile(p0, (p, 1))
+    s = jnp.hstack([u_0_z, p_0_z])
 
     return u, y, s
 
@@ -71,7 +73,7 @@ def generate_one_bcs_training_data(u0, p=101):
     y = jnp.hstack([y1, y2])  # shape = (P, 4)
 
     # u(t, 0) = u0, p(t, 0) = 0
-    s_1 = u0
+    s_1 = u0.reshape(-1, 1)
     s_2 = jnp.zeros((p, 1))
 
     # u(t, 1) = 0, p_z(t, 1) = 0
@@ -107,21 +109,13 @@ def generate_one_test_data(usol, idx, p_test=101):
     z = jnp.linspace(0, 1, p_test)
     t_mesh, z_mesh = jnp.meshgrid(t, z)
 
-    s_1 = u[:, :, 0].T.flatten()  # u
-    s_2 = u[:, :, 1].T.flatten()  # p
+    s_1 = u[:, :, 0].flatten()  # u
+    s_2 = u[:, :, 1].flatten()  # p
     s = jnp.hstack([s_1[:, None], s_2[:, None]])
     u = jnp.tile(u0, (p_test ** 2, 1))
     y = jnp.hstack([t_mesh.flatten()[:, None], z_mesh.flatten()[:, None]])
 
     return u, y, s
-
-
-# Define ds/dz
-def p_z_net(model_fn, params, u, t, z):
-    v_z = jnp.ones(z.shape)
-    p_z = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1], z)[1](v_z)[0]
-    return p_z
-
 
 def loss_ics(model_fn, params, ics_batch):
     inputs, outputs = ics_batch
@@ -134,7 +128,7 @@ def loss_ics(model_fn, params, ics_batch):
 
     # Compute loss
     loss_ic_u = mse(outputs[:, 0].flatten(), s_pred[:, 0])
-    loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])
+    loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])  # TODO: Error -> not 0 but p(z,0) = f(0) > sample from BC or Analytical solution
     return loss_ic_u + loss_ic_p
 
 
@@ -151,10 +145,10 @@ def loss_bcs(model_fn, params, bcs_batch):
     s_z_bc2_pred = jax.vjp(lambda z: apply_net(model_fn, params, u, y[:, 2], z)[:, 1], y[:, 3])[1](v_z)[0]
 
     # Compute loss
-    loss_s_bc_1_u = mse(s_bc1_pred[:, 0], outputs[:, 0]) # u(t, 0) = u0
-    loss_s_bc_1_p = mse(s_bc1_pred[:, 1], outputs[:, 1]) # p(t, 0) = 0
-    loss_s_bc_2_u = mse(s_bc2_pred[:, 0], outputs[:, 2]) # u(t, 1) = 0
-    loss_s_bc_2_p = mse(s_z_bc2_pred, outputs[:, 3]) # p_z(t, 1) = 0
+    loss_s_bc_1_u = mse(s_bc1_pred[:, 0], outputs[:, 0])  # u(t, 0) = u0
+    loss_s_bc_1_p = mse(s_bc1_pred[:, 1], outputs[:, 1])  # p(t, 0) = 0
+    loss_s_bc_2_u = mse(s_bc2_pred[:, 0], outputs[:, 2])  # u(t, 1) = 0
+    loss_s_bc_2_p = mse(s_z_bc2_pred, outputs[:, 3])  # p_z(t, 1) = 0
 
     return loss_s_bc_1_u + loss_s_bc_1_p + loss_s_bc_2_u + loss_s_bc_2_p
 
@@ -180,12 +174,13 @@ def loss_res(model_fn, params, batch):
     v_t = jnp.ones(t.shape)
 
     # Compute gradients
-    p_z = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1], z)[1](v_z)[0]
-    p_zz = jax.jvp(lambda z: jax.vjp(lambda xz: apply_net(model_fn, params, u, t, z)[:, 1],
+    p_z = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1],z)[1](v_z)[0]
+    p_zz = jax.jvp(lambda z: jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 1],
                                      z)[1](v_z)[0], (z,), (v_z,))[1]
-    u_tz = jax.jvp(lambda t: jax.vjp(lambda x: apply_net(model_fn, params, u, t, x)[:, 0],
+    u_tz = jax.jvp(lambda t: jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 0],
                                     z)[1](v_z)[0], (t,), (v_t,))[1]
-    u_zz = jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 0], z)[1](v_z)[0]
+    u_zz = jax.jvp(lambda z: jax.vjp(lambda z: apply_net(model_fn, params, u, t, z)[:, 0],
+                                     z)[1](v_z)[0], (z,), (v_z,))[1]
 
     # Compute PDEs
     pred_1 = (lamda + 2 * mu) * u_zz - p_z
@@ -202,18 +197,24 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + 20*loss_bcs_i + loss_res_i
+    loss_value = loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 
-def get_error(model_fn, params, u_sol, idx, p_err=101, return_data=False):
+def get_error(model_fn, params, u_sol, idx, p_err=101, return_data=False, per_dim = False):
     u_test, y_test, s_test = generate_one_test_data(u_sol, idx, p_err)
 
     t_test = y_test[:, 0]
     z_test = y_test[:, 1]
 
     s_pred = apply_net(model_fn, params, u_test, t_test, z_test)
-    error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
+
+    if per_dim:
+        error_u = jnp.linalg.norm(s_test[:, 0] - s_pred[:, 0]) / jnp.linalg.norm(s_test[:, 0])
+        error_p = jnp.linalg.norm(s_test[:, 1] - s_pred[:, 1]) / jnp.linalg.norm(s_test[:, 1])
+        error = [error_u, error_p]
+    else:
+        error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
 
     if return_data:
         return error, s_pred
@@ -223,7 +224,7 @@ def get_error(model_fn, params, u_sol, idx, p_err=101, return_data=False):
 
 def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     # Generate data, and obtain error
-    error_s, s_pred = get_error(model_fn, params, usol, idx, args.p_test, return_data=True)
+    error_s, s_pred = get_error(model_fn, params, usol, idx, args.p_test, return_data=True, per_dim=True)
 
     u = usol[idx, :, :, 0]
     p = usol[idx, :, :, 1]
@@ -235,7 +236,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     u_pred = s_pred[:, 0].reshape(t.shape[0], z.shape[0])
     p_pred = s_pred[:, 1].reshape(t.shape[0], z.shape[0])
 
-    fig = plt.figure(figsize=(12, 4))
+    fig = plt.figure(figsize=(8, 4))
     plt.subplot(2, 3, 1)
     plt.imshow(u, interpolation='nearest', vmin=jnp.amin(u), vmax=jnp.amax(u), \
                extent=[t.min(), t.max(), z.max(), z.min()], \
@@ -296,9 +297,9 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     plt.title('$p-\hat{p}$')
 
     if test:
-        plt.suptitle(f'test, L2: {error_s:.3e}')
+        plt.suptitle(f'test, L2: u:{error_s[0]:.3e}, p:{error_s[1]:.3e}')
     else:
-        plt.suptitle(f'train, L2: {error_s:.3e}')
+        plt.suptitle(f'train, L2: u:{error_s[0]:.3e}, p:{error_s[1]:.3e}')
     plt.tight_layout()
     plot_dir = os.path.join(result_dir, f'vis/{epoch:06d}/{idx}/')
     if not os.path.exists(plot_dir):
@@ -322,16 +323,8 @@ def main_routine(args):
         raise ValueError('Not enough data for testing, please reduce the number of test samples'
                          ' or increase the number of training samples.')
 
-    u0_train = u_sol[:args.n_train, 0, :]  # input samples
-
-
-    n_in = u_sol.shape[0]  # number of total input samples
-    n_test = n_in - args.n_train  # number of input samples used for test
-    if n_test < args.n_test:
-        raise ValueError('Not enough data for testing, please reduce the number of test samples'
-                         ' or increase the number of training samples.')
-
-    u0_train = u_sol[:args.n_train, 0, :]  # input samples
+    u0_train = u_sol[:args.n_train, 0, :, 0]  # input samples
+    p0_train = u_sol[:args.n_train, -1, 0, 1]  # initial pressure
 
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
@@ -341,15 +334,15 @@ def main_routine(args):
     # ICs data
     ic_keys = jax.random.split(keys[0], args.n_train)
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
-                                                      in_axes=(0, None))
-                                             (ic_keys, u0_train, args.p_ics_train))
+                                                      in_axes=(0, 0, 0, None))
+                                             (ic_keys, u0_train, p0_train, args.p_ics_train))
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
 
     # BCs data
     u_bcs_train, y_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
-                                                      in_axes=(0, 0, None))
+                                                      in_axes=(0, None))
                                              (u0_train, args.p_bcs_train))
 
     u_bcs_train = u_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
@@ -405,7 +398,7 @@ def main_routine(args):
             f.write(f'{arg}: {getattr(args, arg)}\n')
 
     with open(log_file, 'a') as f:
-        f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
+        f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_u,err_p,err_val,runtime\n')
 
     # Choose Plots for visualization
     k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
@@ -445,7 +438,7 @@ def main_routine(args):
 
             # compute error over test data
             errors = jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
-                                                                              args.p_test)
+                                                                                    args.p_test)
 
             err_val = jnp.mean(errors)
 
@@ -481,7 +474,7 @@ if __name__ == "__main__":
 
     # model settings
     parser.add_argument('--num_outputs', type=int, default=2, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=64,
+    parser.add_argument('--hidden_dim', type=int, default=128,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
@@ -490,17 +483,17 @@ if __name__ == "__main__":
     parser.add_argument('--r', type=int, default=0, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
-    parser.add_argument('--branch_layers', type=int, nargs="+", default=[64, 64, 64],
+    parser.add_argument('--branch_layers', type=int, nargs="+", default=[128, 128, 128],
                         help='hidden branch layer sizes')
     parser.add_argument('--n_sensors', type=int, default=101,
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features per sensor to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
+    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_true',
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
-    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[64, 64, 64],
+    parser.add_argument('--trunk_layers', type=int, nargs="+", default=[128, 128, 128],
                         help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2,
                         help='number of input features to trunk network')
@@ -510,15 +503,15 @@ if __name__ == "__main__":
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/biot/normal/',
                         help='a directory to save results, relative to cwd')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=1, help='iteration to save loss and error')
-    parser.add_argument('--vis_iter', type=int, default=500, help='iteration to save visualization')
+    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
+    parser.add_argument('--vis_iter', type=int, default=10000, help='iteration to save visualization')
 
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000,
