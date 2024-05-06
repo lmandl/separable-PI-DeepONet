@@ -128,7 +128,7 @@ def loss_ics(model_fn, params, ics_batch):
 
     # Compute loss
     loss_ic_u = mse(outputs[:, 0].flatten(), s_pred[:, 0])
-    loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])  # TODO: Error -> not 0 but p(z,0) = f(0) > sample from BC or Analytical solution
+    loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])
     return loss_ic_u + loss_ic_p
 
 
@@ -313,7 +313,7 @@ def main_routine(args):
         raise ValueError('Needs normal DeepONet, not separable DeepONet')
     # Prepare the training data
     # Load data
-    path = os.path.join(os.getcwd(), 'data/biot/Y.npy')  # Please use the matlab script to generate data
+    path = os.path.join(os.getcwd(), 'data/biot/Y.npy')
 
     u_sol = jnp.load(path)
 
@@ -398,16 +398,13 @@ def main_routine(args):
             f.write(f'{arg}: {getattr(args, arg)}\n')
 
     with open(log_file, 'a') as f:
-        f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_u,err_p,err_val,runtime\n')
+        f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
 
     # Choose Plots for visualization
     k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
-
-    # switched for testing
     k_test = test_idx[0]  # index
 
     # First visualization
-
     if args.vis_iter > 0:
         # Visualize train example
         visualize(args, model_fn, params, result_dir, 0, u_sol, k_train, False)
@@ -489,7 +486,7 @@ if __name__ == "__main__":
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features per sensor to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_true',
+    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings

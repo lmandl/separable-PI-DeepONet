@@ -339,12 +339,9 @@ def main_routine(args):
 
     # Choose Plots for visualization
     k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
-
-    # switched for testing
     k_test = test_idx[0]  # index
 
     # First visualization
-
     if args.vis_iter > 0:
         # Visualize train example
         visualize(args, model_fn, params, result_dir, 0, u_sol, k_train, False)

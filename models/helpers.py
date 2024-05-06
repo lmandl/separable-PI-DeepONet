@@ -18,6 +18,7 @@ def apply_net(model_fn, params, branch_input, *trunk_in):
     trunk_input = jnp.stack(trunk_in, axis=-1)
     out = model_fn(params, branch_input, trunk_input)
     # Reshape to vector for single output for easier gradient computation
+    # TODO: Adapt / Check squeeze
     if out.shape[1]==1:
         out = jnp.squeeze(out, axis=1)
     return out
@@ -26,10 +27,7 @@ def apply_net(model_fn, params, branch_input, *trunk_in):
 def apply_net_sep(model_fn, params, branch_input, *trunk_in):
     # Define forward pass for separable DeepONet that takes series of trunk inputs
     out = model_fn(params, branch_input, *trunk_in)
-    # Reshape to vector for single output for easier gradient computation
-    out = jnp.squeeze(out)
     return out
-    # TODO: Combine apply_net and apply_net_sep into one function
 
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def step(optimizer, loss_fn, model_fn, opt_state, params_step, ics_batch, bcs_batch, res_batch):
