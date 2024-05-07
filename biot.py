@@ -101,9 +101,9 @@ def generate_one_res_training_data(key, u0, p=1000):
 
 # Generate test data corresponding to one input sample
 def generate_one_test_data(usol, idx, p_test=101):
-    # Check if this is the right dimension to get u0 at z=0
+
     u = usol[idx]
-    u0 = u[0, :, 0]
+    u0 = u[0, :, 0]  # u0 at z=0
 
     t = jnp.linspace(0, 1, p_test)
     z = jnp.linspace(0, 1, p_test)
@@ -116,6 +116,7 @@ def generate_one_test_data(usol, idx, p_test=101):
     y = jnp.hstack([t_mesh.flatten()[:, None], z_mesh.flatten()[:, None]])
 
     return u, y, s
+
 
 def loss_ics(model_fn, params, ics_batch):
     inputs, outputs = ics_batch
@@ -367,6 +368,7 @@ def main_routine(args):
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
     test_idx = jax.random.choice(keys[5], test_range, (args.n_test,), replace=False)
+    test_idx_list = jnp.split(test_idx, 10)
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[6])
@@ -433,10 +435,12 @@ def main_routine(args):
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
 
-            # compute error over test data
-            errors = jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
-                                                                                    args.p_test)
-
+            # compute error over test data (split into 10 batches to avoid memory issues)
+            errors = []
+            for test_idx in test_idx_list:
+                errors.append(jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
+                                                                                       args.p_test))
+            errors = jnp.array(errors).flatten()
             err_val = jnp.mean(errors)
 
             # Print losses
@@ -494,7 +498,7 @@ if __name__ == "__main__":
                         help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2,
                         help='number of input features to trunk network')
-    parser.add_argument('--split_trunk', dest='split_trunk', default=True, action='store_false',
+    parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
                         help='split trunk outputs into j groups for j outputs')
 
     # Training settings
@@ -513,7 +517,7 @@ if __name__ == "__main__":
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000,
                         help='number of input samples used for training')
-    parser.add_argument('--n_test', type=int, default=50, help='number of samples used for testing')
+    parser.add_argument('--n_test', type=int, default=1000, help='number of samples used for testing')
     parser.add_argument('--p_ics_train', type=int, default=101,
                         help='number of locations for evaluating the initial condition')
     parser.add_argument('--p_bcs_train', type=int, default=101,
@@ -522,7 +526,7 @@ if __name__ == "__main__":
                         help='number of locations for evaluating the PDE residual')
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
-    parser.add_argument('--batch_size', type=int, default=50000, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=100000, help='batch size')
 
     args_in = parser.parse_args()
 

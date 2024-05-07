@@ -338,6 +338,7 @@ def main_routine(args):
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
     test_idx = jax.random.choice(keys[3], test_range, (args.n_test,), replace=False)
+    test_idx_list = jnp.split(test_idx, 10)
 
     # Create model
     args, model, model_fn, params = setup_deeponet(args, keys[4])
@@ -404,9 +405,12 @@ def main_routine(args):
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
 
-            # compute error over test data
-            errors = jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
-                                                                              args.p_test)
+            # compute error over test data (split into 10 batches to avoid memory issues)
+            errors = []
+            for test_idx in test_idx_list:
+                errors.append(jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
+                                                                                       args.p_test))
+            errors = jnp.array(errors).flatten()
             err_val = jnp.mean(errors)
 
             # Print losses
@@ -483,7 +487,7 @@ if __name__ == "__main__":
     # Problem / Data Settings
     parser.add_argument('--n_train', type=int, default=1000,
                         help='number of input samples used for training')
-    parser.add_argument('--n_test', type=int, default=50, help='number of samples used for testing')
+    parser.add_argument('--n_test', type=int, default=1000, help='number of samples used for testing')
     parser.add_argument('--p_ics_train', type=int, default=101,
                         help='number of locations for evaluating the initial condition')
     parser.add_argument('--p_bcs_train', type=int, default=50,
