@@ -542,7 +542,7 @@ if __name__ == "__main__":
                         help='batch size')
 
     # Checkpoint settings
-    parser.add_argument('--checkpoint_path', type=str, default="/scratch/mandl/backup/DeepONets/jax_deeponets/results/burgers/separable/20240514-111534/ckpt",
+    parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='path to checkpoint file for restoring, uses latest checkpoint')
     parser.add_argument('--checkpoint_iter', type=int, default=5000,
                         help='iteration of checkpoint file')
