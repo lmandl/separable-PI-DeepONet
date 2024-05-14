@@ -9,6 +9,7 @@ import os
 import argparse
 import matplotlib.pyplot as plt
 import shutil
+import orbax.checkpoint as ocp
 
 from models import setup_deeponet, mse, mse_single, apply_net, step
 
@@ -381,7 +382,6 @@ def main_routine(args):
     ics_data = iter(ics_dataset)
     bcs_data = iter(bcs_dataset)
     res_data = iter(res_dataset)
-    pbar = tqdm.trange(args.epochs)
 
     # create dir for saving results
     result_dir = os.path.join(os.getcwd(), os.path.join(args.result_dir, f'{time.strftime("%Y%m%d-%H%M%S")}'))
@@ -393,6 +393,33 @@ def main_routine(args):
         shutil.rmtree(os.path.join(result_dir, 'vis'))
     if os.path.exists(log_file):
         os.remove(log_file)
+
+    # Set up checkpointing
+    if args.checkpoint_iter > 0:
+        options = ocp.CheckpointManagerOptions(max_to_keep=args.checkpoints_to_keep,
+                                               save_interval_steps=args.checkpoint_iter,
+                                               save_on_steps=[args.epochs]  # save on last iteration
+                                               )
+        mngr = ocp.CheckpointManager(
+            os.path.join(result_dir, 'ckpt'), options=options, item_names=('metadata', 'params')
+        )
+
+    # Restore checkpoint if available
+    if args.checkpoint_path is not None:
+        # Restore checkpoint
+        restore_mngr = ocp.CheckpointManager(args.checkpoint_path, item_names=('metadata', 'params'))
+        ckpt = restore_mngr.restore(
+            restore_mngr.latest_step(),
+            args=ocp.args.Composite(
+                metadata=ocp.args.JsonRestore(),
+                params=ocp.args.StandardRestore(params),
+            ),
+        )
+        # Extract restored params
+        params = ckpt.params
+        offset_epoch = ckpt.metadata['total_iterations']  # define offset for logging
+    else:
+        offset_epoch = 0
 
     # Save arguments
     with open(os.path.join(result_dir, 'args.txt'), 'w') as f:
@@ -409,9 +436,12 @@ def main_routine(args):
     # First visualization
     if args.vis_iter > 0:
         # Visualize train example
-        visualize(args, model_fn, params, result_dir, 0, u_sol, k_train, False)
+        visualize(args, model_fn, params, result_dir, offset_epoch, u_sol, k_train, False)
         # Visualize test example
-        visualize(args, model_fn, params, result_dir, 0, u_sol, k_test, True)
+        visualize(args, model_fn, params, result_dir, offset_epoch, u_sol, k_test, True)
+
+    # Iterations
+    pbar = tqdm.trange(args.epochs)
 
     # Training loop
     for it in pbar:
@@ -458,16 +488,26 @@ def main_routine(args):
 
             # Save results
             with open(log_file, 'a') as f:
-                f.write(f'{it+1}, {loss}, {loss_ics_value}, '
+                f.write(f'{it+1+offset_epoch}, {loss}, {loss_ics_value}, '
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
         # Visualize result
         if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
             # Visualize train example
-            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_train, False)
+            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
             # Visualize test example
-            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_test, True)
+            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
 
+        # Save checkpoint
+        mngr.save(
+            it+1+offset_epoch,
+            args=ocp.args.Composite(
+                params=ocp.args.StandardSave(params),
+                metadata=ocp.args.JsonSave({'total_iterations': it+1}),
+            ),
+        )
+
+    mngr.wait_until_finished()
 
 if __name__ == "__main__":
     # parse command line arguments
@@ -490,7 +530,7 @@ if __name__ == "__main__":
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features per sensor to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_false',
+    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_true',
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
@@ -498,7 +538,7 @@ if __name__ == "__main__":
                         help='hidden trunk layer sizes')
     parser.add_argument('--trunk_input_features', type=int, default=2,
                         help='number of input features to trunk network')
-    parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_false',
+    parser.add_argument('--split_trunk', dest='split_trunk', default=False, action='store_true',
                         help='split trunk outputs into j groups for j outputs')
 
     # Training settings
@@ -529,7 +569,5 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=100000, help='batch size')
 
     args_in = parser.parse_args()
-
-    print('Project in Development')
 
     main_routine(args_in)

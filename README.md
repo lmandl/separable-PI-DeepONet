@@ -12,16 +12,14 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 
 #### Current TODOs
-* save model / checkpointing
-* optimizer decay / scheduler
-* Biot's equation of consolidation in 1D
-  * split of branch and trunk as well as stacked DeepONets implementation and testing
 * fracture mechanics examples
 
 #### Upcoming Tasks
 * include loss weighting as args
+* update checkpointing API in orbax
 * inputs with several values per sensor in branch
 * Review usage of p_** throughout the code
+* optimizer decay / scheduler
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)

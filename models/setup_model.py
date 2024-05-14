@@ -9,6 +9,9 @@ def setup_deeponet(args, key):
         args.split_trunk = False
         args.split_branch = False
 
+    if args.num_outputs > 1 and args.split_trunk is False and args.split_branch is False:
+        raise ValueError('split_trunk and split_branch cannot both be False for multi-output models')
+
     # if split_trunk is True and separable_trunk is false
     # then the hidden_dim is multiplied by the output_dim
     # if split_trunk is false and separable_trunk is false

@@ -9,6 +9,7 @@ import os
 import argparse
 import matplotlib.pyplot as plt
 import shutil
+import orbax.checkpoint as ocp
 
 from models import setup_deeponet, mse, mse_single, step, hvp_fwdfwd
 from models import apply_net_sep as apply_net
@@ -273,7 +274,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     plt.title('$u(z,t)$')
 
     plt.subplot(2, 3, 2)
-    plt.imshow(u_pred, interpolation='nearest', #vmin=jnp.amin(u), vmax=jnp.amax(u), \
+    plt.imshow(u_pred, interpolation='nearest', vmin=jnp.amin(u), vmax=jnp.amax(u), \
                extent=[t.min(), t.max(), z.max(), z.min()], \
                origin='upper', aspect='auto', cmap='viridis')
     cbar = plt.colorbar()
@@ -302,7 +303,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
     plt.title('$p(z,t)$')
 
     plt.subplot(2, 3, 5)
-    plt.imshow(p_pred, interpolation='nearest', #vmin=jnp.amin(p), vmax=jnp.amax(p), \
+    plt.imshow(p_pred, interpolation='nearest', vmin=jnp.amin(p), vmax=jnp.amax(p), \
                extent=[t.min(), t.max(), z.max(), z.min()], \
                origin='upper', aspect='auto', cmap='plasma')
     cbar = plt.colorbar()
@@ -401,7 +402,6 @@ def main_routine(args):
     ics_data = iter(ics_dataset)
     bcs_data = iter(bcs_dataset)
     res_data = iter(res_dataset)
-    pbar = tqdm.trange(args.epochs)
 
     # create dir for saving results
     result_dir = os.path.join(os.getcwd(), os.path.join(args.result_dir, f'{time.strftime("%Y%m%d-%H%M%S")}'))
@@ -413,6 +413,33 @@ def main_routine(args):
         shutil.rmtree(os.path.join(result_dir, 'vis'))
     if os.path.exists(log_file):
         os.remove(log_file)
+
+    # Set up checkpointing
+    if args.checkpoint_iter > 0:
+        options = ocp.CheckpointManagerOptions(max_to_keep=args.checkpoints_to_keep,
+                                               save_interval_steps=args.checkpoint_iter,
+                                               save_on_steps=[args.epochs]  # save on last iteration
+                                               )
+        mngr = ocp.CheckpointManager(
+            os.path.join(result_dir, 'ckpt'), options=options, item_names=('metadata', 'params')
+        )
+
+    # Restore checkpoint if available
+    if args.checkpoint_path is not None:
+        # Restore checkpoint
+        restore_mngr = ocp.CheckpointManager(args.checkpoint_path, item_names=('metadata', 'params'))
+        ckpt = restore_mngr.restore(
+            restore_mngr.latest_step(),
+            args=ocp.args.Composite(
+                metadata=ocp.args.JsonRestore(),
+                params=ocp.args.StandardRestore(params),
+            ),
+        )
+        # Extract restored params
+        params = ckpt.params
+        offset_epoch = ckpt.metadata['total_iterations']  # define offset for logging
+    else:
+        offset_epoch = 0
 
     # Save arguments
     with open(os.path.join(result_dir, 'args.txt'), 'w') as f:
@@ -429,9 +456,12 @@ def main_routine(args):
     # First visualization
     if args.vis_iter > 0:
         # Visualize train example
-        visualize(args, model_fn, params, result_dir, 0, u_sol, k_train, False)
+        visualize(args, model_fn, params, result_dir, offset_epoch, u_sol, k_train, False)
         # Visualize test example
-        visualize(args, model_fn, params, result_dir, 0, u_sol, k_test, True)
+        visualize(args, model_fn, params, result_dir, offset_epoch, u_sol, k_test, True)
+
+    # Iterations
+    pbar = tqdm.trange(args.epochs)
 
     # Training loop
     for it in pbar:
@@ -478,16 +508,26 @@ def main_routine(args):
 
             # Save results
             with open(log_file, 'a') as f:
-                f.write(f'{it+1}, {loss}, {loss_ics_value}, '
+                f.write(f'{it+1+offset_epoch}, {loss}, {loss_ics_value}, '
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
         # Visualize result
         if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
             # Visualize train example
-            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_train, False)
+            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
             # Visualize test example
-            visualize(args, model_fn, params, result_dir, it+1, u_sol, k_test, True)
+            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
 
+        # Save checkpoint
+        mngr.save(
+            it+1+offset_epoch,
+            args=ocp.args.Composite(
+                params=ocp.args.StandardSave(params),
+                metadata=ocp.args.JsonSave({'total_iterations': it+1}),
+            ),
+        )
+
+    mngr.wait_until_finished()
 
 if __name__ == "__main__":
     # parse command line arguments
@@ -549,7 +589,5 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1000, help='batch size')
 
     args_in = parser.parse_args()
-
-    print('Project in Development')
 
     main_routine(args_in)
