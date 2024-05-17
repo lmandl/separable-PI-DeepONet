@@ -147,6 +147,7 @@ def loss_ics(model_fn, params, ics_batch):
     # Compute loss
     loss_ic_u = mse(outputs[:, :, 0].flatten(), s_pred[:, :, :, 0].flatten())
     loss_ic_p = mse(outputs[:, :, 1].flatten(), s_pred[:, :, :, 1].flatten())
+
     return loss_ic_u + loss_ic_p
 
 
@@ -216,14 +217,14 @@ def loss_res(model_fn, params, batch):
     loss_pred_1 = mse_single(pred_1)
     loss_pred_2 = mse_single(pred_2)
 
-    return loss_pred_1 + loss_pred_2
+    return loss_pred_1 +  loss_pred_2
 
 
 def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value =  loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 
@@ -587,6 +588,14 @@ if __name__ == "__main__":
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
     parser.add_argument('--batch_size', type=int, default=1000, help='batch size')
+
+    # Checkpoint settings
+    parser.add_argument('--checkpoint_path', type=str, default=None,
+                        help='path to checkpoint file for restoring, uses latest checkpoint')
+    parser.add_argument('--checkpoint_iter', type=int, default=5000,
+                        help='iteration of checkpoint file')
+    parser.add_argument('--checkpoints_to_keep', type=int, default=5,
+                        help='number of checkpoints to keep')
 
     args_in = parser.parse_args()
 

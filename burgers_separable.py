@@ -204,8 +204,7 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    # changed for testing
-    loss_value = 20 * loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = 20.0 * loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 

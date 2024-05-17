@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 import jax
-from jax import jvp, vjp
+from jax import jvp
 import optax
 from functools import partial
 
@@ -15,7 +15,10 @@ def mse_single(y_pred):
 @partial(jax.jit, static_argnums=(0,))
 def apply_net(model_fn, params, branch_input, *trunk_in):
     # Define forward pass for normal DeepOnet that takes series of trunk inputs and stacks them
-    trunk_input = jnp.stack(trunk_in, axis=-1)
+    if len(trunk_in) == 1:
+        trunk_input = trunk_in[0]
+    else:
+        trunk_input = jnp.stack(trunk_in, axis=-1)
     out = model_fn(params, branch_input, trunk_input)
     # Reshape to vector for single output for easier gradient computation
     # TODO: Adapt / Check squeeze

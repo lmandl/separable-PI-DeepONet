@@ -1,13 +1,15 @@
 # DeepONets in JAX
 
-Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX 
+Code for Physics-Informed DeepONets (https://arxiv.org/abs/1910.03193) in JAX 
+Authors: Somdatta Goswami, Luis Mandl
 
 ## Roadmap
 
 ### Models
 
 #### Implemented
-* Burgers Equation PI (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
+* Burgers Equation (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
+* Biot's Equation for Consolidation
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 
@@ -15,11 +17,13 @@ Code for DeepONets (https://arxiv.org/abs/1910.03193) in JAX
 * fracture mechanics examples
 
 #### Upcoming Tasks
-* include loss weighting as args
-* update checkpointing API in orbax
+* include loss weights as args
 * inputs with several values per sensor in branch
 * Review usage of p_** throughout the code
 * optimizer decay / scheduler
+
+#### Optimization Potential
+* Usage of DataGenerator as general class
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
