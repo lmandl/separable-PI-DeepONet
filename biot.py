@@ -377,12 +377,12 @@ def main_routine(args):
 
     # Define optimizer with optax (ADAM)
     # optimizer
-    if args.lr_scheduler == 'cosine_onecycle':
-        lr_scheduler = optax.cosine_onecycle_schedule(args.epochs, args.lr)
-    elif args.lr_scheduler == 'cosine_decay':
-        lr_scheduler = optax.cosine_decay_schedule(args.lr, args.epochs)
-    else:
+    if args.lr_scheduler == 'exponential_decay':
+        lr_scheduler = optax.exponential_decay(args.lr, args.lr_schedule_steps, args.lr_decay_rate)
+    elif args.lr_scheduler == 'constant':
         lr_scheduler = optax.constant_schedule(args.lr)
+    else:
+        raise ValueError(f"learning rate scheduler {args.lr_scheduler} not implemented.")
     optimizer = optax.adam(learning_rate=lr_scheduler)
     opt_state = optimizer.init(params)
 
@@ -553,8 +553,10 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
-    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['cosine_onecycle', 'constant', 'cosine_decay'],
+    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=2000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/biot/normal/',
