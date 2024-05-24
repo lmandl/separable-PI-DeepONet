@@ -488,10 +488,10 @@ if __name__ == "__main__":
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=100000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=2000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
 
     # result directory
