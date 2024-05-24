@@ -20,10 +20,6 @@ Authors: Somdatta Goswami, Luis Mandl
 * include loss weights as args
 * inputs with several values per sensor in branch
 * Review usage of p_** throughout the code
-* optimizer decay / scheduler
-
-#### Optimization Potential
-* Usage of DataGenerator as general class
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)

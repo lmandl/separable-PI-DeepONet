@@ -311,7 +311,14 @@ def main_routine(args):
     args, model, model_fn, params = setup_deeponet(args, keys[6])
 
     # Define optimizer with optax (ADAM)
-    optimizer = optax.adam(learning_rate=args.lr)
+    # optimizer
+    if args.lr_scheduler == 'cosine_onecycle':
+        lr_scheduler = optax.cosine_onecycle_schedule(args.epochs, args.lr)
+    elif args.lr_scheduler == 'cosine_decay':
+        lr_scheduler = optax.cosine_decay_schedule(args.lr, args.epochs)
+    else:
+        lr_scheduler = optax.constant_schedule(args.lr)
+    optimizer = optax.adam(learning_rate=lr_scheduler)
     opt_state = optimizer.init(params)
 
     # Data
@@ -482,6 +489,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
+    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['cosine_onecycle', 'constant', 'cosine_decay'],
+                        help='learning rate scheduler')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/burgers/normal/',

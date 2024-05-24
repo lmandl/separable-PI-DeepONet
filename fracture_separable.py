@@ -12,7 +12,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import shutil
 import orbax.checkpoint as ocp
 
-from models import setup_deeponet, apply_net, step, mse
+from models import setup_deeponet, mse, step, hvp_fwdfwd
+from models import apply_net_sep as apply_net
 
 matplotlib.use('Agg')
 
@@ -22,6 +23,7 @@ def fraction_apply_net(model_fn, params, v_in, *x_in):
         x_in = x_in[0]
     else:
         x_in = jnp.stack(x_in, axis=-1)
+
     """
     lb_elem_br = jnp.min(v_in, axis=0)
     ub_elem_br = jnp.max(v_in, axis=0)
@@ -52,6 +54,8 @@ def loss_data(model_fn, params, ics_batch):
     u_ref, v_ref, phi_ref = outputs
 
     s = fraction_apply_net(model_fn, params, u_in, y)
+
+    # TODO: Adapt to separable DeepONet
     u_out, v_out, phi_out = s[:, 0], s[:, 1], s[:, 2]
 
     loss_u = mse(u_out, u_ref[:, 0])
@@ -90,6 +94,7 @@ def loss_res(model_fn, params, res_batch):
     c21 = E * nu / ((1 + nu) * (1 - 2 * nu))
     c33 = 0.5 * E / (1 + nu)
 
+    # TODO: Adapt to separable DeepONet
     s = fraction_apply_net(model_fn, params, u_in, x, y, t)
     u, v, phi = s[:, 0], s[:, 1], s[:, 2]
 
@@ -249,7 +254,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
 
 def viz_loop(model_fn, params, zipped, num_rows, num_cols, offset_epoch, result_dir):
-
+    # TODO: Adapt to separable DeepONet
     for (v_data, x_data, u_ref, v_ref, phi_ref, flag, n_t) in zipped:
         y_pred = model_fn(params, v_data, x_data)
         u_pred, v_pred, phi_pred = y_pred[:, 0], y_pred[:, 1], y_pred[:, 2]
@@ -274,9 +279,11 @@ def viz_loop(model_fn, params, zipped, num_rows, num_cols, offset_epoch, result_
             visualize(damage_pred, damage_true, xDisp_pred, xDisp_true, yDisp_pred,
                       yDisp_true, offset_epoch, result_dir, i, flag)
 
+
 def main_routine(args):
-    if args.separable:
-        raise ValueError('Needs normal DeepONet, not separable DeepONet')
+    # Check if separable network is used
+    if not args.separable:
+        raise ValueError('Needs separable DeepONet for separable example')
 
     # Load and Prepare the training data
     # Load data
@@ -285,6 +292,7 @@ def main_routine(args):
     num_test = num_cases
     num_cols = 162
     num_rows = 162
+
     path_dataset = os.path.join(os.getcwd(), 'data/fracture/dataset1.mat')
 
     dataset_all = scipy.io.loadmat(path_dataset)
@@ -302,24 +310,21 @@ def main_routine(args):
     num_sample = int(tmp_length/num_gap)
     id_sample = jnp.arange(0, num_sample)
 
-    x_new = jnp.zeros((num_sample*num_cases, 6))
-    appDisp_new = jnp.zeros((num_sample*num_cases, 1))
+    x_coords = x[:num_cols,0]
+    y_coords = x[::num_rows,1]
+    t_coords = jnp.ones((1,)) # TODO clarify this
 
-    for i in range(0, num_cases):
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 0:2].set(x[id_sample, 0:2])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 2:3].set(hist[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 3:4].set(u[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 4:5].set(v[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 5:6].set(phi[id_sample, i:i+1])
+    x_train = [x_coords, y_coords, t_coords]
+    vDelta_train = stress_train
 
-        appDisp_new = appDisp_new.at[i*num_sample:(i+1)*num_sample, :].set(stress_train[:, i])
+    u_train = jnp.zeros((num_cases, num_rows, num_cols))
+    v_train = jnp.zeros((num_cases, num_rows, num_cols))
+    phi_train = jnp.zeros((num_cases, num_rows, num_cols))
 
-    x_train = x_new[:, 0:3]
-    u_train = x_new[:, 3:4]
-    v_train = x_new[:, 4:5]
-    phi_train = x_new[:, 5:6]
-
-    vDelta_train = appDisp_new[:, 0:1]
+    for i in range(num_cases):
+        u_train[i, :, :] = u[:, i].reshape(num_rows, num_cols)
+        v_train[i, :, :] = v[:, i].reshape(num_rows, num_cols)
+        phi_train[i, :, :] = phi[:, i].reshape(num_rows, num_cols)
 
     # Fetch data
     data_batch = ((vDelta_train, x_train), (u_train, v_train, phi_train))
@@ -329,32 +334,26 @@ def main_routine(args):
     path_dataset_test = os.path.join(os.getcwd(), 'data/fracture/dataset5.mat')
     dataset = scipy.io.loadmat(path_dataset_test)
     x = dataset['cordinates']
-    phi_test = dataset['phi']
-    u_test = dataset['u']
-    v_test = dataset['v']
+    phi = dataset['phi']
+    u = dataset['u']
+    v = dataset['v']
     stress_test = dataset['stress'].T
 
-    path_dataset_hist_test = os.path.join(os.getcwd(), 'data/fracture/history5.mat')
-    dataset_hist = scipy.io.loadmat(path_dataset_hist_test)
-    hist = dataset_hist['hist']
+    x_coords = x[:num_cols, 0]
+    y_coords = x[::num_rows, 1]
+    t_coords = jnp.ones((1,))  # TODO clarify this
 
-    x_new = jnp.zeros((num_sample * num_cases, 6))
-    appDisp_new = jnp.zeros((num_sample * num_cases, 1))
+    x_test = [x_coords, y_coords, t_coords]
+    vDelta_test = stress_test
 
-    for i in range(0, num_cases):
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 0:2].set(x[id_sample, 0:2])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 2:3].set(hist[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 3:4].set(u_test[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 4:5].set(v_test[id_sample, i:i+1])
-        x_new = x_new.at[i * num_sample:(i + 1) * num_sample, 5:6].set(phi_test[id_sample, i:i+1])
+    u_test = jnp.zeros((num_cases, num_rows, num_cols))
+    v_test = jnp.zeros((num_cases, num_rows, num_cols))
+    phi_test = jnp.zeros((num_cases, num_rows, num_cols))
 
-        appDisp_new = appDisp_new.at[i * num_sample:(i + 1) * num_sample, :].set(stress_test[:, i])
-
-    x_test = x_new[:, 0:3]
-    u_test = x_new[:, 3:4]
-    v_test = x_new[:, 4:5]
-    phi_test = x_new[:, 5:6]
-    vDelta_test = appDisp_new
+    for i in range(num_cases):
+        u_test[i, :, :] = u[:, i].reshape(num_rows, num_cols)
+        v_test[i, :, :] = v[:, i].reshape(num_rows, num_cols)
+        phi_test[i, :, :] = phi[:, i].reshape(num_rows, num_cols)
 
     err_ref = jnp.concat([u_test, v_test, phi_test], axis=1)
 
@@ -502,7 +501,7 @@ if __name__ == "__main__":
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
-    parser.add_argument('--separable', dest='separable', default=False, action='store_true',
+    parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
     parser.add_argument('--r', type=int, default=0, help='hidden tensor dimension in separable DeepONets')
 
@@ -513,7 +512,7 @@ if __name__ == "__main__":
                         help='number of sensors for branch network, also called >>m<<')
     parser.add_argument('--branch_input_features', type=int, default=1,
                         help='number of input features per sensor to branch network')
-    parser.add_argument('--split_branch', dest='split_branch', default=True, action='store_true',
+    parser.add_argument('--split_branch', dest='split_branch', default=False, action='store_true',
                         help='split branch outputs into n groups for n outputs')
 
     # Trunk settings
@@ -532,7 +531,7 @@ if __name__ == "__main__":
                         help='learning rate scheduler')
 
     # result directory
-    parser.add_argument('--result_dir', type=str, default='results/fracture/normal/',
+    parser.add_argument('--result_dir', type=str, default='results/fracture/separable/',
                         help='a directory to save results, relative to cwd')
 
     # log settings
