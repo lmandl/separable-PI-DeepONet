@@ -354,6 +354,11 @@ def main_routine(args):
     optimizer = optax.adam(learning_rate=lr_scheduler)
     opt_state = optimizer.init(params)
 
+    # Data
+    ics_data = iter(ics_dataset)
+    bcs_data = iter(bcs_dataset)
+    res_data = iter(res_dataset)
+
     # create dir for saving results
     result_dir = os.path.join(os.getcwd(), os.path.join(args.result_dir, f'{time.strftime("%Y%m%d-%H%M%S")}'))
     log_file = os.path.join(result_dir, 'log.csv')

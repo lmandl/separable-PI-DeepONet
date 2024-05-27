@@ -168,7 +168,7 @@ if __name__ == "__main__":
                         help='use stacked DeepONet, if false use unstacked DeepONet')
     parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
-    parser.add_argument('--r', type=int, default=0, help='hidden tensor dimension in separable DeepONets')
+    parser.add_argument('--r', type=int, default=32, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
     parser.add_argument('--branch_cnn', dest='branch_cnn', default=False, action='store_true',)

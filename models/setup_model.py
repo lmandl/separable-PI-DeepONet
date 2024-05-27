@@ -12,13 +12,17 @@ def setup_deeponet(args, key):
     if args.num_outputs > 1 and args.split_trunk is False and args.split_branch is False:
         raise ValueError('split_trunk and split_branch cannot both be False for multi-output models')
 
+    if args.separable and args.r<=0:
+        raise ValueError('r must be positive integer for separable DeepONets')
+
     # compatability for version without branch CNNs
-    if args.branch_cnn is None:
+    if not hasattr(args, 'branch_cnn'):
         args.branch_cnn = False
-    else:
-        # Check if arguments are valid
+    elif args.branch_cnn:
+        # Check if arguments are valid and store into list
+        branch_cnn_blocks = []
+        dense = False
         for layer in args.branch_cnn_blocks:
-            dense = False
             if len(layer) == 4:
                 # Conv block
                 if dense:
@@ -33,15 +37,18 @@ def setup_deeponet(args, key):
                     raise ValueError('Unknown pooling operation for branch_cnn_blocks')
             elif len(layer) == 2:
                 # Dense block
-                dense = True
+                if not dense:
+                    dense = True
+                    branch_cnn_blocks.append(["flatten"])
                 if layer[-1] not in ["relu", "tanh", "sigmoid"]:
                     raise ValueError('Invalid activation function for branch_cnn_blocks')
             else:
                 raise ValueError('Invalid branch_cnn_blocks')
-        args.branch_layers = []
-
-    if args.branch_cnn and args.split_branch:
-        raise ValueError('split_branch with branch_cnn is not supported at the moment')
+            branch_cnn_blocks.append(layer)
+    else:
+        # check that branch_layers is not empty
+        if not hasattr(args, 'branch_layers'):
+            raise ValueError('branch_layers must be defined if branch_cnn is False')
 
     if args.branch_cnn and not args.separable:
         raise ValueError('branch_cnn is only supported with separable DeepONets at the moment')
@@ -82,9 +89,12 @@ def setup_deeponet(args, key):
         # add hidden_dim to the last layer of branch_cnn_blocks as dense layer
         if args.split_branch:
             # Append last layer and activation function (None) to branch_cnn_blocks
-            branch_cnn_blocks = args.branch_cnn_blocks.append[[args.hidden_dim * args.num_outputs, None]]
+            branch_cnn_blocks.append([args.hidden_dim * args.num_outputs, 'None'])
         else:
-            branch_cnn_blocks = args.branch_cnn_blocks.append[[args.hidden_dim, None]]
+            branch_cnn_blocks.append([args.hidden_dim, 'None'])
+        branch_cnn_blocks = tuple(branch_cnn_blocks)
+        # for system without branch_layers
+        branch_layers = []
 
     # Convert list to tuples
     trunk_layers = tuple(trunk_layers)
@@ -100,16 +110,17 @@ def setup_deeponet(args, key):
         if args.branch_cnn:
             model = SeparableBranchCNNDeepONet(branch_cnn_blocks, trunk_layers, args.split_branch, args.split_trunk,
                                                args.stacked_do, args.num_outputs, args.r)
-            #TODO: Initialize parameters
+            branch_input_features = jnp.ones(shape=(1, *args.branch_cnn_input_size, args.branch_cnn_input_channels))
         else:
             model = SeparableDeepONet(branch_layers, trunk_layers, args.split_branch, args.split_trunk,
                                       args.stacked_do, args.num_outputs, args.r)
-            # Initialize parameters
-            # init of trunk needs args.trunk_input_features * jnp.ones(shape=(1, 1)) but not as list
-            input_features = [jnp.ones(shape=(1, 1)) for _ in range(args.trunk_input_features)]
+            branch_input_features = jnp.ones(shape=(1, args.n_sensors * args.branch_input_features))
+        # Initialize parameters
 
-            params = model.init(key, jnp.ones(shape=(1, args.n_sensors * args.branch_input_features)),
-                                *input_features)
+        # init of trunk needs args.trunk_input_features * jnp.ones(shape=(1, 1)) but not as list
+        input_features = [jnp.ones(shape=(1, 1)) for _ in range(args.trunk_input_features)]
+
+        params = model.init(key, branch_input_features, *input_features)
 
     # Print model from parameters
     print('--- model_summary ---')
