@@ -211,40 +211,40 @@ class SeparableBranchCNNDeepONet(nn.Module):
             for j in range(self.cnn_branch_layers[-1][0]):
                 branch_x_j = branch_x
                 for i, fs in enumerate(self.cnn_branch_layers):
-                    if len(fs)==4:
+                    if len(fs) == 4:
                         # Conv Block
                         branch_x_j = nn.Conv(fs[0], kernel_size=(fs[1], fs[2]), name=f"branch_{j}_{i}")(branch_x_j)
-                        if fs[3]=="tanh":
+                        if fs[3] == "tanh":
                             branch_x_j = nn.activation.tanh(branch_x_j)
-                        elif fs[3]=="relu":
+                        elif fs[3] == "relu":
                             branch_x_j = nn.activation.relu(branch_x_j)
-                        elif fs[3]=="sigmoid":
+                        elif fs[3] == "sigmoid":
                             branch_x_j = nn.activation.sigmoid(branch_x_j)
                         else:
                             raise ValueError("Unknown activation function")
-                    elif len(fs)==5:
+                    elif len(fs) == 5:
                         # Pooling Block
-                        if fs[0]=="avg_pool":
+                        if fs[0] == "avg_pool":
                             branch_x_j = nn.avg_pool(branch_x_j, window_shape=(fs[1], fs[2]), strides=(fs[3], fs[4]))
-                        elif fs[0]=="max_pool":
+                        elif fs[0] == "max_pool":
                             branch_x_j = nn.max_pool(branch_x_j, window_shape=(fs[1], fs[2]), strides=(fs[3], fs[4]))
                         else:
                             raise ValueError("Unknown pooling type")
-                    elif len(fs)==2:
+                    elif len(fs) == 2:
                         # Dense Block
                         branch_x_j = nn.Dense(fs[0], kernel_init=init, name=f"branch_{j}_{i}")(branch_x_j)
-                        if fs[1]=="tanh":
+                        if fs[1] == "tanh":
                             branch_x_j = nn.activation.tanh(branch_x_j)
-                        elif fs[1]=="relu":
+                        elif fs[1] == "relu":
                             branch_x_j = nn.activation.relu(branch_x_j)
-                        elif fs[1]=="sigmoid":
+                        elif fs[1] == "sigmoid":
                             branch_x_j = nn.activation.sigmoid(branch_x_j)
-                        elif fs[1]=="None":
+                        elif fs[1] == "None":
                             # No activation for the output layer
                             branch_x_j = branch_x_j
                         else:
                             raise ValueError("Unknown activation function")
-                    elif len(fs)==1:
+                    elif len(fs) == 1:
                         # Flatten Block
                         branch_x_j = branch_x_j.reshape((branch_x_j.shape[0], -1))
                     else:
@@ -259,41 +259,41 @@ class SeparableBranchCNNDeepONet(nn.Module):
         # otherwise, we have a single branch
         else:
             for i, fs in enumerate(self.cnn_branch_layers):
-                if len(fs)==4:
+                if len(fs) == 4:
                     # Conv Block
                     branch_x = nn.Conv(fs[0], kernel_size=(fs[1], fs[2]), name=f"branch_{i}")(branch_x)
-                    if fs[3]=="tanh":
+                    if fs[3] == "tanh":
                         branch_x = nn.activation.tanh(branch_x)
-                    elif fs[3]=="relu":
+                    elif fs[3] == "relu":
                         branch_x = nn.activation.relu(branch_x)
-                    elif fs[3]=="sigmoid":
+                    elif fs[3] == "sigmoid":
                         branch_x = nn.activation.sigmoid(branch_x)
                     else:
                         raise ValueError("Unknown activation function")
-                elif len(fs)==5:
+                elif len(fs) == 5:
                     # Pooling Block
-                    if fs[0]=="avg_pool":
+                    if fs[0] == "avg_pool":
                         branch_x = nn.avg_pool(branch_x, window_shape=(fs[1], fs[2]), strides=(fs[3], fs[4]))
-                    elif fs[0]=="max_pool":
+                    elif fs[0] == "max_pool":
                         branch_x = nn.max_pool(branch_x, window_shape=(fs[1], fs[2]), strides=(fs[3], fs[4]))
                     else:
                         raise ValueError("Unknown pooling type")
-                elif len(fs)==2:
+                elif len(fs) == 2:
                     # Dense Block
                     branch_x = nn.Dense(fs[0], kernel_init=init, name=f"branch_{i}")(branch_x)
-                    if fs[1]=="tanh":
+                    if fs[1] == "tanh":
                         branch_x = nn.activation.tanh(branch_x)
-                    elif fs[1]=="relu":
+                    elif fs[1] == "relu":
                         branch_x = nn.activation.relu(branch_x)
-                    elif fs[1]=="sigmoid":
+                    elif fs[1] == "sigmoid":
                         branch_x = nn.activation.sigmoid(branch_x)
-                    elif fs[1]=="None":
+                    elif fs[1] == "None":
                         # No activation for the output layer
                         branch_x = branch_x
                     else:
                         raise ValueError("Unknown activation function")
-                elif len(fs)==1:
-                    # Flatten Block
+                elif len(fs) == 1:
+                    # Flatten Block to [batch_size, -1]
                     branch_x = branch_x.reshape((branch_x.shape[0], -1))
                 else:
                     raise ValueError("Unknown layer type")

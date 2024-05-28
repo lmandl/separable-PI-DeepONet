@@ -537,6 +537,14 @@ def main_routine(args):
 
     mngr.wait_until_finished()
 
+    runtime = time.time() - start
+
+    # Save results
+    with open(log_file, 'a') as f:
+        f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
+                f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
+
+
 if __name__ == "__main__":
     # parse command line arguments
     parser = argparse.ArgumentParser()

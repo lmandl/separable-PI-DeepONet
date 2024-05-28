@@ -226,7 +226,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, idx, test=False):
 
     u_diff = u-s_pred
     plt.subplot(1, 3, 3)
-    plt.imshow(u_diff, interpolation="nearest", vmin=abs(u_diff).max(), vmax=-abs(u_diff).max(),
+    plt.imshow(u_diff, interpolation="nearest", vmin=-abs(u_diff).max(), vmax=abs(u_diff).max(),
                extent=[t.min(), t.max(), x.max(), x.min()],
                origin='upper', aspect='auto', cmap='seismic')
     plt.xlabel('t')
@@ -451,6 +451,13 @@ def main_routine(args):
         )
 
     mngr.wait_until_finished()
+
+    # Save results
+    runtime = time.time() - start
+
+    with open(log_file, 'a') as f:
+        f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
+                f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
 
 if __name__ == "__main__":
