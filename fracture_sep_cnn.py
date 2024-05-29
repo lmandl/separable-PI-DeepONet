@@ -86,6 +86,8 @@ def loss_res(model_fn, params, res_batch):
     # Note: vDelta is u in reference code
     # Note: x in reference code contains x & y & t coordinates
     # here: trunk_in
+    # Note: Similar as in get_hist
+
     # Fetch data
     inputs, _ = res_batch
     u_in, trunk_in = inputs
@@ -156,9 +158,23 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
 
 
 def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true_print, yDisp_pred_print,
-              yDisp_true_print, epoch, folder, idx, test=False):
+              yDisp_true_print, epoch, folder, idx, test=False, errors=None):
+
     fig = plt.figure(constrained_layout=False, figsize=(6, 6))
     gs = fig.add_gridspec(3, 3)
+
+    if errors is not None:
+        if test:
+            plt.suptitle(f'test_{idx}, L2: {jnp.mean(errors):.3e}, L2_u: '
+                         f'{errors[0]:.3e}, L2_v: {errors[1]:.3e}, L2_phi: {errors[2]:.3e}')
+        else:
+            plt.suptitle(f'train_{idx}, L2: {jnp.mean(errors):.3e}, L2_u: '
+                         f'{errors[0]:.3e}, L2_v: {errors[1]:.3e}, L2_phi: {errors[2]:.3e}')
+    else:
+        if test:
+            plt.suptitle(f'test_{idx}')
+        else:
+            plt.suptitle(f'train_{idx}')
 
     ax = fig.add_subplot(gs[0, 2])
     h = ax.imshow(damage_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
@@ -267,22 +283,187 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     plt.close(fig)
 
 
-def viz_loop(model_fn, params, zipped, epoch, result_dir):
+def viz_loop(model_fn, params, data_batch, u_ref, v_ref, phi_ref, n_t, test_flag, crackTip, epoch, result_dir):
 
-    data_batch, u_ref, v_ref, phi_ref, n_t, flag = zipped
+    if test_flag:
 
-    for i in range(0, n_t):
-        inputs, outputs = data_batch[i]
-        u_in, trunk_in = inputs
-        x, y, delta_u = trunk_in
+        errors, pred_array, history = get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref,
+                                                 train=False, return_data=True, per_dim=True, crackTip=crackTip)
 
+        for i in range(0, n_t):
+            u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
+            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
+            visualize(phi_pred, phi_ref_i, u_pred, u_ref_i, v_pred, v_ref_i, epoch, result_dir, i,
+                      test_flag, errors[i,:])
+
+    else:
+
+        errors, pred_array, history = get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref, train=True,
+                                                 return_data=True, per_dim=True, crackTip=None)
+        for i in range(0, n_t):
+            inputs, _ = data_batch[i]
+            u_in, trunk_in = inputs
+            x, y, delta_u = trunk_in
+
+            u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
+            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
+            visualize(phi_pred, phi_ref_i, u_pred, u_ref_i, v_pred, v_ref_i, epoch, result_dir, i,
+                      test_flag, errors[i,:])
+
+
+def get_hist(model_fn, params, u_in, x, y, delta_u, hist, crackTip, mu, lmd, gc, l, B):
+
+    # Calculate hist from u, v, phi and current history field
+    init_hist = get_init_hist(x, y, crackTip, l, B, gc)
+
+    # obtain net predictions / gradients
+    t_x = jnp.ones(x.shape)
+    t_y = jnp.ones(y.shape)
+    u_x = jax.jvp(lambda x: fraction_apply_net(model_fn, params, u_in, x, y, delta_u)[:, :, 0], (x,), (t_x,))[1]
+    u_y = jax.jvp(lambda y: fraction_apply_net(model_fn, params, u_in, x, y, delta_u)[:, :, 0], (y,), (t_y,))[1]
+    v_x = jax.jvp(lambda x: fraction_apply_net(model_fn, params, u_in, x, y, delta_u)[:, :, 1], (x,), (t_x,))[1]
+    v_y = jax.jvp(lambda y: fraction_apply_net(model_fn, params, u_in, x, y, delta_u)[:, :, 1], (y,), (t_y,))[1]
+
+    u_xy = u_y + v_x
+
+    #Computing the tensile strain energy
+    u_xy = 0.5*u_xy
+    M = jnp.sqrt((u_x-v_y)**2 + 4*(u_xy**2))
+    lambda1 = 0.5*(u_x + v_y) + 0.5*M
+    lambda2 = 0.5*(u_x + v_y) - 0.5*M
+
+    eigSum = (lambda1 + lambda2)
+    sEnergy_pos = (0.125*lmd * (eigSum + jnp.abs(eigSum))**2 +
+                   0.25*mu*((lambda1 + jnp.abs(lambda1))**2 + (lambda2 + jnp.abs(lambda2))**2))
+
+    hist_temp = jnp.maximum(init_hist, sEnergy_pos)
+    hist = jnp.maximum(hist, hist_temp)
+
+    return hist
+
+def get_init_hist(x, y, crackTip, l, B, cEnerg):
+
+    xx, yy = jnp.meshgrid(x.flatten(), y.flatten())
+    init_hist = jnp.zeros((xx.shape[0], xx.shape[1]))
+    dist = jnp.where(xx > crackTip, jnp.sqrt((xx - 0.5) ** 2 + (yy - 0.5) ** 2), jnp.abs(yy - 0.5))
+    init_hist = jnp.where(dist < 0.5 * l, B * cEnerg * 0.5 * (1 - (2 * dist / l)) / l, init_hist)
+
+    return init_hist
+
+
+def auto_regression(model_fn, params, trunk_ins, crackTip):
+
+    # Define constants
+    E = 210.0 * 1e3
+    nu = 0.3
+    mu = 0.5 * E / (1 + nu)
+    lmd = nu * E / ((1 - 2 * nu) * (1 + nu))
+    gc = 2.7
+    l = 0.0625
+    B = 92
+
+    # Get the number of rows and columns
+    num_rows = trunk_ins[0][0].shape[0]
+    num_cols = trunk_ins[0][1].shape[0]
+
+    # Get the number of load increases based on the number of delta u
+    n_t = trunk_ins[0][2].shape[0]
+
+    # Array to store the history fields
+    hist_array = jnp.zeros((num_rows, num_cols, n_t))
+
+    # Set the initial history field
+    H_0 = get_init_hist(trunk_ins[0][0], trunk_ins[0][1], crackTip, l, B, gc)
+    hist_array = hist_array.at[:, :, 0].set(H_0)
+
+    # Array to store predictions
+    pred_array = jnp.zeros((n_t, num_rows, num_cols, 3))
+
+    for i in range(0, n_t-1):
+        u_in = jnp.zeros((1, num_rows, num_cols, 3))  # 1 at the front for batch size needed for branch
+        u_in = u_in.at[0, :, :, 0].set(hist_array[:, :, i])
+        if i - 1 >= 0:
+            u_in = u_in.at[0, :, :, 1].set(hist_array[:, :, i-1])
+        if i - 2 >= 0:
+            u_in = u_in.at[0, :, :, 2].set(hist_array[:, :, i-2])
+
+        # Get the trunk inputs
+        x = trunk_ins[i][0]
+        y = trunk_ins[i][1]
+        delta_u = trunk_ins[i][2]
+
+        # Get the prediction
         y_pred = fraction_apply_net(model_fn, params, u_in, x, y, delta_u)
-        u_pred, v_pred, phi_pred = y_pred[:, :, 0], y_pred[:, :,  1], y_pred[:, :, 2]
 
-        u_ref, v_ref, phi_ref = outputs
+        # Store the prediction
+        pred_array = pred_array.at[i, :, :, :].set(y_pred)
 
-        visualize(phi_pred, phi_ref, u_pred, u_ref, v_pred,
-                  v_ref, epoch, result_dir, i, flag)
+        # Calculate the history field
+        current_h = u_in[0, :, :, 0]
+        hist = get_hist(model_fn, params, u_in, x, y, delta_u, current_h, crackTip, mu, lmd, gc, l, B)
+
+        hist_array = hist_array.at[:, :, i+1].set(hist)
+
+    return pred_array, hist_array
+
+
+def get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref,
+               train = False, return_data = False, per_dim = False, crackTip=0.5):
+
+    if not train:
+
+        # Get the number of load increases based on the number of delta u
+        n_t = len(data_batch)
+
+        # Auto-regression
+        pred_array, hist_array = auto_regression(model_fn, params, data_batch, crackTip)
+
+        errors = []
+
+        for i in range(0, n_t):
+            u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
+            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
+            if per_dim:
+                error_u = jnp.linalg.norm(u_ref_i - u_pred) / jnp.linalg.norm(u_ref_i)
+                error_v = jnp.linalg.norm(v_ref_i - v_pred) / jnp.linalg.norm(v_ref_i)
+                error_phi = jnp.linalg.norm(phi_ref_i - phi_pred) / jnp.linalg.norm(phi_ref_i)
+                errors.append([error_u, error_v, error_phi])
+            else:
+                stack_pred = jnp.stack([u_pred, v_pred, phi_pred], axis=-1)
+                stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
+                error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
+                errors.append(error)
+
+    else:
+
+        errors = []
+        x_shape = u_ref.shape[0]
+        y_shape = u_ref.shape[1]
+        pred_array = jnp.zeros((len(data_batch), x_shape, y_shape, 3))
+        hist_array = []
+        for i, data in enumerate(data_batch):
+            inputs, _ = data
+            u_in, trunk_in = inputs
+            x, y, delta_u = trunk_in
+            s = fraction_apply_net(model_fn, params, u_in, x, y, delta_u)
+            pred_array = pred_array.at[i, :, :, :].set(s)
+            u, v, phi = s[:, :, 0], s[:, :, 1], s[:, :, 2]
+            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
+            if per_dim:
+                error_u = jnp.linalg.norm(u_ref_i - u) / jnp.linalg.norm(u_ref_i)
+                error_v = jnp.linalg.norm(v_ref_i - v) / jnp.linalg.norm(v_ref_i)
+                error_phi = jnp.linalg.norm(phi_ref_i - phi) / jnp.linalg.norm(phi_ref_i)
+                errors.append([error_u, error_v, error_phi])
+            else:
+                stack_pred = jnp.stack([u, v, phi], axis=-1)
+                stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
+                error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
+                errors.append(error)
+
+    if return_data:
+        return jnp.array(errors), pred_array, hist_array
+    else:
+        return jnp.array(errors)
 
 
 def main_routine(args):
@@ -290,7 +471,6 @@ def main_routine(args):
     if not args.separable:
         raise ValueError('Needs separable DeepONet for separable example')
 
-    # TODO: Load and Prepare the test data
     # Trunk Networks: x, y, \delta u
     # Branch network [H_(t-1), H_(t-2), H_(t-3)]
     # For the first \delta u, the branch network will take [H_0, 0, 0]
@@ -351,6 +531,35 @@ def main_routine(args):
         data_batches.append(((branch_input, [x_cord, y_cord, stress_train[i].reshape(-1,1)]),
                              (u_train[:, :, i], v_train[:, :, i], phi_train[:, :, i])))
 
+    # Prepare test data
+    path_dataset_test = os.path.join(os.getcwd(), 'data/fracture/dataset5.mat')
+    dataset_test = scipy.io.loadmat(path_dataset_test)
+    x_test = dataset_test['cordinates']
+    phi = dataset_test['phi']
+    u = dataset_test['u']
+    v = dataset_test['v']
+    stress_test = dataset_test['stress']
+    x_cord_test = x_test[:num_cols, 0].reshape(-1,1)
+    y_cord_test = x_test[::num_cols, 1].reshape(-1,1)
+    num_load_test = 7
+
+    crackTip = 0.5 # Crack tip location TODO: Check if this is correct / where do i get the location from?
+
+    u_test = jnp.zeros((num_rows, num_cols, num_load_test))
+    v_test = jnp.zeros((num_rows, num_cols, num_load_test))
+    phi_test = jnp.zeros((num_rows, num_cols, num_load_test))
+
+    for i in range(num_load_test):
+        u_test = u_train.at[:, :, i].set(u[:, i].reshape(num_rows, num_cols))
+        v_test = v_train.at[:, :, i].set(v[:, i].reshape(num_rows, num_cols))
+        phi_test = phi_train.at[:, :, i].set(phi[:, i].reshape(num_rows, num_cols))
+
+    #path_dataset_hist_test = os.path.join(os.getcwd(), 'data/fracture/history5.mat')
+
+    test_batches = []
+    for i in range(num_load):
+        test_batches.append([x_cord_test, y_cord_test, stress_test[i].reshape(-1, 1)])
+
     # Create data generators
     data_dataset = DataGenerator(data_batches)
     res_dataset = DataGenerator(res_batches)
@@ -358,10 +567,6 @@ def main_routine(args):
     # Data
     data_data = itertools.cycle(data_dataset)
     res_data = itertools.cycle(res_dataset)
-
-    # Prepare visualization data
-    # Visualize train and test example
-    zipped = (data_batches, u_train, v_train, phi_train, num_load, False)
 
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
@@ -430,7 +635,12 @@ def main_routine(args):
 
     # First visualization
     if args.vis_iter > 0:
-        viz_loop(model_fn, params, zipped, offset_epoch, result_dir)
+        # Visualize train example
+        viz_loop(model_fn, params, res_batches, u_train, v_train, phi_train, num_load, False, 0,
+                 offset_epoch, result_dir)
+        # Visualize test example
+        viz_loop(model_fn, params, test_batches, u_test, v_test, phi_test, num_load_test, True, crackTip,
+                 offset_epoch, result_dir)
 
     # Iterations
     pbar = tqdm.trange(args.epochs)
@@ -456,8 +666,9 @@ def main_routine(args):
             loss_res_value = loss_res(model_fn, params, res_batch)
 
             # compute error over test data
-            # TODO: Implement error calculation
-            err_val = -1
+            errors = get_errors(model_fn, params, test_batches, u_test, v_test, phi_test, train=False,
+                                return_data=False, per_dim=False, crackTip=crackTip)
+            err_val = jnp.mean(errors)
 
             # Print losses
             pbar.set_postfix({'l': f'{loss:.2e}',
@@ -478,8 +689,12 @@ def main_routine(args):
 
         # Visualize result
         if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
-            # Visualize train and test example
-            viz_loop(model_fn, params, zipped, it+1+offset_epoch, result_dir)
+            # Visualize train example
+            viz_loop(model_fn, params, res_batches, u_train, v_train, phi_train, num_load, False, 0,
+                     offset_epoch+it+1, result_dir)
+            # Visualize test example
+            viz_loop(model_fn, params, test_batches, u_test, v_test, phi_test, num_load_test, True, crackTip,
+                     offset_epoch+it+1, result_dir)
 
         # Save checkpoint
         mngr.save(
