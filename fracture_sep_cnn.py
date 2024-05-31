@@ -9,8 +9,8 @@ import optax
 import scipy.io
 import os
 import argparse
-import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import shutil
 import orbax.checkpoint as ocp
@@ -160,15 +160,18 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
 def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true_print, yDisp_pred_print,
               yDisp_true_print, epoch, folder, idx, test=False, errors=None):
 
-    fig = plt.figure(constrained_layout=False, figsize=(6, 6))
+    fig = plt.figure(constrained_layout=False, figsize=(9,9))
     gs = fig.add_gridspec(3, 3)
+    plt.subplots_adjust(left=0.1, bottom=0.1, right=0.9, top=0.9, wspace=0.4, hspace=0.3)
+    cbformat = matplotlib.ticker.ScalarFormatter()  # create the formatter
+    cbformat.set_powerlimits((-1, 1))  # set the limits for sci. not.
 
     if errors is not None:
         if test:
-            plt.suptitle(f'test_{idx}, L2: {jnp.mean(errors):.3e}, L2_u: '
+            plt.suptitle(f'test_{idx}, L2: {jnp.mean(errors):.3e}\nL2_u: '
                          f'{errors[0]:.3e}, L2_v: {errors[1]:.3e}, L2_phi: {errors[2]:.3e}')
         else:
-            plt.suptitle(f'train_{idx}, L2: {jnp.mean(errors):.3e}, L2_u: '
+            plt.suptitle(f'train_{idx}, L2: {jnp.mean(errors):.3e}\nL2_u: '
                          f'{errors[0]:.3e}, L2_v: {errors[1]:.3e}, L2_phi: {errors[2]:.3e}')
     else:
         if test:
@@ -178,13 +181,13 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 2])
     h = ax.imshow(damage_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
+                  )#vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
     ax.set_title('Pred $\phi$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[1, 2])
     h = ax.imshow(damage_true_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
@@ -194,7 +197,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.axes.yaxis.set_visible(False)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[2, 2])
     h = ax.imshow(abs(damage_pred_print - damage_true_print), origin='lower', interpolation='nearest', cmap='jet',
@@ -205,17 +208,17 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.axes.yaxis.set_visible(False)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[0, 1])
     h = ax.imshow(yDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
+                  )#vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
     ax.set_title('Pred $v$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[1, 1])
     h = ax.imshow(yDisp_true_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
@@ -225,7 +228,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.set_title('True $v$(x)')
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[2, 1])
     h = ax.imshow(abs(yDisp_pred_print - yDisp_true_print), origin='lower', interpolation='nearest', cmap='jet',
@@ -236,17 +239,17 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.set_title('Error in $v$(x)')
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[0, 0])
     h = ax.imshow(xDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
+                  )#vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
     ax.set_title('Pred $u$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[1, 0])
     h = ax.imshow(xDisp_true_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
@@ -256,7 +259,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.set_title('True $u$(x)')
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     ax = fig.add_subplot(gs[2, 0])
     h = ax.imshow(abs(xDisp_pred_print - xDisp_true_print), origin='lower', interpolation='nearest', cmap='jet',
@@ -267,7 +270,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     ax.set_title('Error in $u$(x)')
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(h, ax=ax, cax=cax)
+    fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
     if test:
         plot_dir = os.path.join(folder, f'vis/{epoch:06d}/test_{idx}/')
@@ -277,7 +280,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     if not os.path.exists(plot_dir):
         os.makedirs(plot_dir)
 
-    fig.tight_layout()
+    #fig.tight_layout()
 
     plt.savefig(os.path.join(os.path.join(folder, plot_dir), 'pred.png'))
     plt.close(fig)
@@ -341,6 +344,7 @@ def get_hist(model_fn, params, u_in, x, y, delta_u, hist, crackTip, mu, lmd, gc,
 
     return hist
 
+
 def get_init_hist(x, y, crackTip, l, B, cEnerg):
 
     xx, yy = jnp.meshgrid(x.flatten(), y.flatten())
@@ -367,7 +371,7 @@ def auto_regression(model_fn, params, trunk_ins, crackTip):
     num_cols = trunk_ins[0][1].shape[0]
 
     # Get the number of load increases based on the number of delta u
-    n_t = trunk_ins[0][2].shape[0]
+    n_t = len(trunk_ins)
 
     # Array to store the history fields
     hist_array = jnp.zeros((num_rows, num_cols, n_t))
@@ -379,7 +383,7 @@ def auto_regression(model_fn, params, trunk_ins, crackTip):
     # Array to store predictions
     pred_array = jnp.zeros((n_t, num_rows, num_cols, 3))
 
-    for i in range(0, n_t-1):
+    for i in range(0, n_t):
         u_in = jnp.zeros((1, num_rows, num_cols, 3))  # 1 at the front for batch size needed for branch
         u_in = u_in.at[0, :, :, 0].set(hist_array[:, :, i])
         if i - 1 >= 0:
@@ -668,6 +672,7 @@ def main_routine(args):
             # compute error over test data
             errors = get_errors(model_fn, params, test_batches, u_test, v_test, phi_test, train=False,
                                 return_data=False, per_dim=False, crackTip=crackTip)
+
             err_val = jnp.mean(errors)
 
             # Print losses
@@ -720,13 +725,13 @@ if __name__ == "__main__":
 
     # model settings
     parser.add_argument('--num_outputs', type=int, default=3, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=32,
+    parser.add_argument('--hidden_dim', type=int, default=64,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
     parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
-    parser.add_argument('--r', type=int, default=32, help='hidden tensor dimension in separable DeepONets')
+    parser.add_argument('--r', type=int, default=64, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
     parser.add_argument('--branch_cnn', dest='branch_cnn', default=True, action='store_true',)
@@ -757,7 +762,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
-    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
+    parser.add_argument('--lr_scheduler', type=str, default='exponential_decay', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
     parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
