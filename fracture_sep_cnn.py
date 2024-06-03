@@ -30,7 +30,6 @@ class DataGenerator(data.Dataset):
         inputs, outputs = self.__data_generation(index)
         return inputs, outputs
 
-    #@partial(jax.jit, static_argnums=(0,))
     def __data_generation(self, index):
         """Generates data containing one sample"""
         example = self.data[index]
@@ -40,7 +39,6 @@ class DataGenerator(data.Dataset):
 
 
 def fraction_apply_net(model_fn, params, v_in, *x_in):
-    # TODO: Maybe some input scaling is needed
 
     if v_in.shape[0] != 1:
         raise ValueError('Needs single batch for branch and last trunk input')
@@ -50,9 +48,6 @@ def fraction_apply_net(model_fn, params, v_in, *x_in):
     # Since the input batch to the branch is 1 as is the trunk input for delta u, we need to reshape the output
     # i.e. [162, 162, 1, 3] -> [162, 162, 3]
     y_out = jnp.reshape(y_out, (y_out.shape[1], y_out.shape[2], y_out.shape[4]))
-
-    # Transpose each output
-    #y_out = jnp.stack([y_out[:, :, 0].T, y_out[:, :, 1].T, y_out[:, :, 2].T], axis=-1)
 
     u_lift = x_in[0] * y_out[:, :, 0]
     v_lift = x_in[1] * (x_in[1] - 1) * y_out[:, :, 1] + x_in[1] * x_in[2] # Check if this is correct
@@ -725,13 +720,13 @@ if __name__ == "__main__":
 
     # model settings
     parser.add_argument('--num_outputs', type=int, default=3, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=64,
+    parser.add_argument('--hidden_dim', type=int, default=128,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
     parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
-    parser.add_argument('--r', type=int, default=64, help='hidden tensor dimension in separable DeepONets')
+    parser.add_argument('--r', type=int, default=128, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
     parser.add_argument('--branch_cnn', dest='branch_cnn', default=True, action='store_true',)
@@ -764,7 +759,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str, default='exponential_decay', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=2000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
 
     # result directory
