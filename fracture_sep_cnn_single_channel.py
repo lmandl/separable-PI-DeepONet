@@ -30,7 +30,6 @@ class DataGenerator(data.Dataset):
         inputs, outputs = self.__data_generation(index)
         return inputs, outputs
 
-
     def __data_generation(self, index):
         """Generates data containing one sample"""
         example = self.data[index]
@@ -711,19 +710,19 @@ if __name__ == "__main__":
 
     # model settings
     parser.add_argument('--num_outputs', type=int, default=3, help='number of outputs')
-    parser.add_argument('--hidden_dim', type=int, default=64,
+    parser.add_argument('--hidden_dim', type=int, default=128,
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
     parser.add_argument('--separable', dest='separable', default=True, action='store_true',
                         help='use separable DeepONets')
-    parser.add_argument('--r', type=int, default=64, help='hidden tensor dimension in separable DeepONets')
+    parser.add_argument('--r', type=int, default=128, help='hidden tensor dimension in separable DeepONets')
 
     # Branch settings
     parser.add_argument('--branch_cnn', dest='branch_cnn', default=True, action='store_true',)
     parser.add_argument('--branch_cnn_blocks', nargs="+", action='append',
                         default=[[32, 3, 3, "relu"], ["max_pool", 2, 2, 2, 2], [64, 3, 3, "relu"],
-                                 ["max_pool", 2, 2, 2, 2], [256, "relu"], [32, "tanh"]],
+                                 ["max_pool", 2, 2, 2, 2], [256, "relu"], [256, "tanh"]],
                         help='branch cnn blocks, list of length 4 are Conv2D blocks (features, kernel_size_1, '
                              'kernel_size 2, ac_fun); list of length 5 are Pool2D blocks (pool_type, kernel_size_1, '
                              'kernel_size_2, stride_1, stride_2); list of length 2 are Dense blocks (features, ac_fun);'
@@ -766,7 +765,7 @@ if __name__ == "__main__":
                         help='path to checkpoint file for restoring, uses latest checkpoint')
     parser.add_argument('--checkpoint_iter', type=int, default=5000,
                         help='iteration of checkpoint file')
-    parser.add_argument('--checkpoints_to_keep', type=int, default=5,
+    parser.add_argument('--checkpoints_to_keep', type=int, default=1,
                         help='number of checkpoints to keep')
 
     args_in = parser.parse_args()
