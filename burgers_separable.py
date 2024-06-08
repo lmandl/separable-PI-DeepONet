@@ -11,6 +11,7 @@ import argparse
 import matplotlib.pyplot as plt
 import shutil
 import orbax.checkpoint as ocp
+from optax.tree_utils import tree_l2_norm
 
 from models import setup_deeponet, mse, mse_single, step, hvp_fwdfwd
 from models import apply_net_sep as apply_net
@@ -136,7 +137,7 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = 20.0 * loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = 20.0 * loss_ics_i + loss_bcs_i + loss_res_i + tree_l2_norm(params)
     return loss_value
 
 
