@@ -526,7 +526,7 @@ if __name__ == "__main__":
                         help='split trunk outputs into j groups for j outputs')
 
     # Training settings
-    parser.add_argument('--seed', type=int, default=1234, help='random seed')
+    parser.add_argument('--seed', type=int, default=1337, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=100000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
