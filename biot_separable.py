@@ -18,40 +18,7 @@ from models import apply_net_sep as apply_net
 # We sample the displacement at z=0 in t=[0,1] as branch input
 # trunk input is [t, z] and stacked output is [u, p]
 
-# Data Generator
-class DataGeneratorIC(data.Dataset):
-    # IC has same t for all samples in y
-    def __init__(self, u, t, s, batch_size, gen_key, p_ic):
-        self.u = u
-        self.t = t
-        self.s = s
-        self.p_ic = p_ic
-        self.N = u.shape[0]
-        self.batch_size = batch_size
-        self.key = gen_key
-
-    def __getitem__(self, index):
-        """Generate one batch of data"""
-        self.key, subkey = jax.random.split(self.key)
-        self.key, subkey2 = jax.random.split(self.key)
-        inputs, outputs = self.__data_generation(subkey, subkey2)
-        return inputs, outputs
-
-    @partial(jax.jit, static_argnums=(0,))
-    def __data_generation(self, key_i, key_z):
-        """Generates data containing batch_size samples"""
-        idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
-        s = self.s[idx, :]
-        z = jax.random.uniform(key_z, (self.p_ic, 1))
-        t = self.t
-        u = self.u[idx, :]
-        # Construct batch
-        inputs = (u, (t, z))
-        outputs = s
-        return inputs, outputs
-
-
-class DataGeneratorBC(data.Dataset):
+class DataGenerator(data.Dataset):
     # IC has same t for all samples in y
     def __init__(self, u, t, z, s, batch_size, gen_key):
         self.u = u
@@ -78,41 +45,6 @@ class DataGeneratorBC(data.Dataset):
         u = self.u[idx, :]
         # Construct batch
         inputs = (u, (t, z))
-        outputs = s
-        return inputs, outputs
-
-
-class DataGeneratorRes(data.Dataset):
-
-    def __init__(self, u, s, batch_size, gen_key, p_res):
-        self.u = u
-        self.s = s
-        self.p_res = p_res
-        self.N = u.shape[0]
-        self.batch_size = batch_size
-        self.key = gen_key
-
-    def __getitem__(self, index):
-        """Generate one batch of data"""
-        self.key, subkey = jax.random.split(self.key)
-        self.key, subkey2 = jax.random.split(self.key)
-        self.key, subkey3 = jax.random.split(self.key)
-        inputs, outputs = self.__data_generation(subkey, subkey2, subkey3)
-        return inputs, outputs
-
-    @partial(jax.jit, static_argnums=(0,))
-    def __data_generation(self, key_i, key_x, key_t):
-        """Generates data containing batch_size samples"""
-        idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
-        s = jnp.tile(self.s, (self.batch_size, self.batch_size))
-
-        u = self.u[idx, :]
-
-        t = jax.random.uniform(key_t, (self.p_res, 1))
-        x = jax.random.uniform(key_x, (self.p_res, 1))
-
-        # Construct batch
-        inputs = (u, (t, x))
         outputs = s
         return inputs, outputs
 
@@ -359,14 +291,15 @@ def main_routine(args):
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 4)
+    keys = jax.random.split(key, 6)
 
     # ICs data
     t_ics_train = jnp.zeros((1, 1))
     s_u_ics_train = jnp.zeros((args.n_train, args.p_ics_train))
+    z_ics_train = jnp.linspace(0, 1, args.p_ics_train).reshape(-1, 1)
     s_p_ics_train = jnp.tile(p0_train, (args.p_ics_train, 1)).T
     s_ics_train = jnp.dstack([s_u_ics_train, s_p_ics_train])
-    ics_dataset = DataGeneratorIC(u0_train, t_ics_train, s_ics_train, args.batch_size, keys[0], args.p_ics_train)
+    ics_dataset = DataGenerator(u0_train, t_ics_train, z_ics_train, s_ics_train, args.batch_size, keys[0])
 
     # BCs data
     s_bcs_train = jnp.dstack([u0_train, jnp.zeros((args.n_train, args.p_bcs_train)),
@@ -378,14 +311,16 @@ def main_routine(args):
     z_bc_train = (z_bc1_train, z_bc2_train)
 
     # Create data generator
-    bcs_dataset = DataGeneratorBC(u0_train, t_bcs_train, z_bc_train, s_bcs_train, args.batch_size, keys[1])
+    bcs_dataset = DataGenerator(u0_train, t_bcs_train, z_bc_train, s_bcs_train, args.batch_size, keys[1])
 
     # Residual data
     # generate keys for Residuals
     s_res_train = jnp.zeros((1, 1))
+    t_res_train = jnp.linspace(0, 1, args.p_res_train).reshape(-1, 1)
+    z_res_train = jnp.linspace(0, 1, args.p_res_train).reshape(-1, 1)
 
     # Create data generators
-    res_dataset = DataGeneratorRes(u0_train, s_res_train, args.batch_size, keys[2], args.p_res_train)
+    res_dataset = DataGenerator(u0_train, t_res_train, z_res_train, s_res_train, args.batch_size, keys[2])
 
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
@@ -458,7 +393,7 @@ def main_routine(args):
         f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
 
     # Choose Plots for visualization
-    k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+    k_train = jax.random.randint(keys[5], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
     k_test = test_idx[0]  # index
 
     # First visualization
@@ -613,7 +548,7 @@ if __name__ == "__main__":
                         help='path to checkpoint file for restoring, uses latest checkpoint')
     parser.add_argument('--checkpoint_iter', type=int, default=5000,
                         help='iteration of checkpoint file')
-    parser.add_argument('--checkpoints_to_keep', type=int, default=5,
+    parser.add_argument('--checkpoints_to_keep', type=int, default=1,
                         help='number of checkpoints to keep')
 
     args_in = parser.parse_args()

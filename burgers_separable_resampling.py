@@ -304,7 +304,7 @@ def main_routine(args):
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 4)
+    keys = jax.random.split(key, 6)
 
     # ICs data
     s_ics_train = u0_train
@@ -406,7 +406,7 @@ def main_routine(args):
         f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
 
     # Choose Plots for visualization
-    k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+    k_train = jax.random.randint(keys[5], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
     k_test = test_idx[0]  # index
 
     # Initial visualization

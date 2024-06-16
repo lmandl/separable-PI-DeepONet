@@ -236,7 +236,7 @@ def main_routine(args):
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 8)
+    keys = jax.random.split(key, 6)
 
     # ICs data
     s_ics_train = u0_train
@@ -257,7 +257,7 @@ def main_routine(args):
     t_bc_train = jnp.linspace(0, 1, args.p_bcs_train)[:, None]
 
     # Create data generator
-    bcs_dataset = DataGenerator(u0_train, t_bc_train, x_bc_train, s_bcs_train, args.batch_size, keys[2])
+    bcs_dataset = DataGenerator(u0_train, t_bc_train, x_bc_train, s_bcs_train, args.batch_size, keys[1])
     # Note: p_bcs_train can be halved as one sample from t is used for both BCs
 
     # Residual data
@@ -268,15 +268,15 @@ def main_routine(args):
     t_res_train = jnp.linspace(0, 1, args.p_res_train)[:, None]
 
     # Create data generators
-    res_dataset = DataGenerator(u0_train, t_res_train, x_res_train, s_res_train, args.batch_size, keys[5])
+    res_dataset = DataGenerator(u0_train, t_res_train, x_res_train, s_res_train, args.batch_size, keys[2])
 
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
-    test_idx = jax.random.choice(keys[6], test_range, (args.n_test,), replace=False)
+    test_idx = jax.random.choice(keys[3], test_range, (args.n_test,), replace=False)
     test_idx_list = jnp.split(test_idx, 10)
 
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[7])
+    args, model, model_fn, params = setup_deeponet(args, keys[4])
 
     # Define optimizer with optax (ADAM)
     # optimizer
@@ -341,7 +341,7 @@ def main_routine(args):
         f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
 
     # Choose Plots for visualization
-    k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+    k_train = jax.random.randint(keys[5], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
     k_test = test_idx[0]  # index
 
     # Initial visualization

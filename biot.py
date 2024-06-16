@@ -47,9 +47,9 @@ class DataGenerator(data.Dataset):
 
 
 # Generate ics training data corresponding to one input sample
-def generate_one_ics_training_data(key, u0, p0, p=101):
+def generate_one_ics_training_data(u0, p0, p=101):
     t_0 = jnp.zeros((p, 1))
-    z_0 = jax.random.uniform(key, (p, 1))
+    z_0 = jnp.linspace(0, 1, p)[:, None]
 
     y = jnp.hstack([t_0, z_0])
     u = jnp.tile(u0, (p, 1))
@@ -87,14 +87,16 @@ def generate_one_bcs_training_data(u0, p=101):
 
 
 # Generate res training data corresponding to one input sample
-def generate_one_res_training_data(key, u0, p=1000):
-    subkeys = jax.random.split(key, 2)
+def generate_one_res_training_data(u0, p=1000):
 
-    t_res = jax.random.uniform(subkeys[0], (p, 1))
-    z_res = jax.random.uniform(subkeys[1], (p, 1))
+    p_grid = jnp.sqrt(p).astype(jnp.int32) # sqrt to get square grid
+    t_res_i = jnp.linspace(0, 1, p_grid)
+    z_res_i = jnp.linspace(0, 1, p_grid)
+
+    t_res, z_res = jnp.meshgrid(t_res_i, z_res_i)
 
     u = jnp.tile(u0, (p, 1))
-    y = jnp.hstack([t_res, z_res])
+    y = jnp.hstack([t_res.flatten()[:, None], z_res.flatten()[:, None]])
     s = jnp.zeros((p, 2))
 
     return u, y, s
@@ -332,13 +334,12 @@ def main_routine(args):
     # Split key for IC, BC, Residual data, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 7)
+    keys = jax.random.split(key, 6)
 
     # ICs data
-    ic_keys = jax.random.split(keys[0], args.n_train)
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
                                                       in_axes=(0, 0, 0, None))
-                                             (ic_keys, u0_train, p0_train, args.p_ics_train))
+                                             (u0_train, p0_train, args.p_ics_train))
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train, -1)
@@ -353,27 +354,26 @@ def main_routine(args):
     s_bcs_train = s_bcs_train.reshape(args.n_train * args.p_bcs_train, -1)
 
     # Residual data
-    res_keys = jax.random.split(keys[1], args.n_train)
     u_res_train, y_res_train, s_res_train = (jax.vmap(generate_one_res_training_data,
                                                       in_axes=(0, 0, None))
-                                             (res_keys, u0_train, args.p_res_train))
+                                             (u0_train, args.p_res_train))
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
     y_res_train = y_res_train.reshape(args.n_train * args.p_res_train, -1)
     s_res_train = s_res_train.reshape(args.n_train * args.p_res_train, -1)
 
     # Create data generators
-    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, args.batch_size, keys[2])
-    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, args.batch_size, keys[3])
-    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, args.batch_size, keys[4])
+    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, args.batch_size, keys[0])
+    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, args.batch_size, keys[1])
+    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, args.batch_size, keys[2])
 
     # Create test data
     test_range = jnp.arange(args.n_train, u_sol.shape[0])
-    test_idx = jax.random.choice(keys[5], test_range, (args.n_test,), replace=False)
+    test_idx = jax.random.choice(keys[3], test_range, (args.n_test,), replace=False)
     test_idx_list = jnp.split(test_idx, 10)
 
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[6])
+    args, model, model_fn, params = setup_deeponet(args, keys[4])
 
     # Define optimizer with optax (ADAM)
     # optimizer
@@ -438,7 +438,7 @@ def main_routine(args):
         f.write('epoch,loss,loss_ics_value,loss_bcs_value,loss_res_value,err_val,runtime\n')
 
     # Choose Plots for visualization
-    k_train = jax.random.randint(keys[7], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
+    k_train = jax.random.randint(keys[5], shape=(1,), minval=0, maxval=args.n_train)[0]  # index
     k_test = test_idx[0]  # index
 
     # First visualization
@@ -593,7 +593,7 @@ if __name__ == "__main__":
                         help='path to checkpoint file for restoring, uses latest checkpoint')
     parser.add_argument('--checkpoint_iter', type=int, default=5000,
                         help='iteration of checkpoint file')
-    parser.add_argument('--checkpoints_to_keep', type=int, default=5,
+    parser.add_argument('--checkpoints_to_keep', type=int, default=1,
                         help='number of checkpoints to keep')
 
     args_in = parser.parse_args()
