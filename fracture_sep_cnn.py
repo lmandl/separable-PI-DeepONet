@@ -281,24 +281,27 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     plt.close(fig)
 
 
-def viz_loop(model_fn, params, data_batch, u_ref, v_ref, phi_ref, n_t, test_flag, crackTip, epoch, result_dir):
+def viz_loop(model_fn, params, data_batch, ref_sol, test_flag, epoch, result_dir):
+
+    step_num = ref_sol[0].shape[-1]
+    samp_num = ref_sol[0].shape[0]
 
     if test_flag:
 
-        errors, pred_array, history = get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref,
-                                                 train=False, return_data=True, per_dim=True, crackTip=crackTip)
+        errors, pred_array, history = get_errors(model_fn, params, data_batch, ref_sol,
+                                                 train=False, return_data=True, per_dim=True)
 
-        for i in range(0, n_t):
+        """for step_i in range(step_num):
             u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
             u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
             visualize(phi_pred, phi_ref_i, u_pred, u_ref_i, v_pred, v_ref_i, epoch, result_dir, i,
-                      test_flag, errors[i,:])
+                      test_flag, errors[i,:])"""
 
     else:
 
-        errors, pred_array, history = get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref, train=True,
-                                                 return_data=True, per_dim=True, crackTip=None)
-        for i in range(0, n_t):
+        errors, pred_array, history = get_errors(model_fn, params, data_batch, ref_sol,
+                                                 train=True, return_data=True, per_dim=True)
+        """for i in range(0, n_t):
             inputs, _ = data_batch[i]
             u_in, trunk_in = inputs
             x, y, delta_u = trunk_in
@@ -306,7 +309,7 @@ def viz_loop(model_fn, params, data_batch, u_ref, v_ref, phi_ref, n_t, test_flag
             u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
             u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
             visualize(phi_pred, phi_ref_i, u_pred, u_ref_i, v_pred, v_ref_i, epoch, result_dir, i,
-                      test_flag, errors[i,:])
+                      test_flag, errors[i,:])"""
 
 
 def get_hist(model_fn, params, u_in, x, y, delta_u, hist, crackTip, mu, lmd, gc, l, B):
@@ -350,7 +353,7 @@ def get_init_hist(x, y, crackTip, l, B, cEnerg):
     return init_hist
 
 
-def auto_regression(model_fn, params, trunk_ins, crackTip):
+def auto_regression(model_fn, params, trunk_ins):
 
     # Define constants
     E = 210.0 * 1e3
@@ -360,6 +363,7 @@ def auto_regression(model_fn, params, trunk_ins, crackTip):
     gc = 2.7
     l = 0.0625
     B = 92
+    crackTip = 0.5
 
     # Get the number of rows and columns
     num_rows = trunk_ins[0][0].shape[0]
@@ -372,7 +376,7 @@ def auto_regression(model_fn, params, trunk_ins, crackTip):
     hist_array = jnp.zeros((num_rows, num_cols, n_t))
 
     # Set the initial history field
-    H_0 = get_init_hist(trunk_ins[0][0], trunk_ins[0][1], crackTip, l, B, gc)
+    H_0 = get_init_hist(trunk_ins[0][0], trunk_ins[0][1], crackTip, l, B, gc) # How to calculate crack tip
     hist_array = hist_array.at[:, :, 0].set(H_0)
 
     # Array to store predictions
@@ -406,61 +410,79 @@ def auto_regression(model_fn, params, trunk_ins, crackTip):
     return pred_array, hist_array
 
 
-def get_errors(model_fn, params, data_batch, u_ref, v_ref, phi_ref,
-               train = False, return_data = False, per_dim = False, crackTip=0.5):
+def get_errors(model_fn, params, data_batch, ref_sol, train=False, return_data=False, per_dim=False):
+
+    # Get number of samples and number of load increases from the reference solution
+    samp_num = ref_sol[0].shape[0]
+    step_num = ref_sol[0].shape[-1]
+
+    u_ref, v_ref, phi_ref = ref_sol
 
     if not train:
-
-        # Get the number of load increases based on the number of delta u
-        n_t = len(data_batch)
-
-        # Auto-regression
-        pred_array, hist_array = auto_regression(model_fn, params, data_batch, crackTip)
-
         errors = []
+        pred_array_all = []
+        hist_array_all = []
 
-        for i in range(0, n_t):
-            u_pred, v_pred, phi_pred = pred_array[i][:, :, 0], pred_array[i][:, :, 1], pred_array[i][:, :, 2]
-            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
-            if per_dim:
-                error_u = jnp.linalg.norm(u_ref_i - u_pred) / jnp.linalg.norm(u_ref_i)
-                error_v = jnp.linalg.norm(v_ref_i - v_pred) / jnp.linalg.norm(v_ref_i)
-                error_phi = jnp.linalg.norm(phi_ref_i - phi_pred) / jnp.linalg.norm(phi_ref_i)
-                errors.append([error_u, error_v, error_phi])
-            else:
-                stack_pred = jnp.stack([u_pred, v_pred, phi_pred], axis=-1)
-                stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
-                error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
-                errors.append(error)
+        for samp_i in range(samp_num):
+
+            # use the current sample
+            data = data_batch[samp_i]
+
+            # Auto-regression
+            pred_array, hist_array = auto_regression(model_fn, params, data)
+
+            pred_array_all.append(pred_array)
+            hist_array_all.append(hist_array)
+
+            for step_i in range(step_num):
+                i = samp_i * step_num + step_i
+                u_pred, v_pred, phi_pred = (pred_array[i][:, :, 0],
+                                            pred_array[i][:, :, 1],
+                                            pred_array[i][:, :, 2])
+                u_ref_i, v_ref_i, phi_ref_i = (u_ref[samp_i, :, :, step_i],
+                                               v_ref[samp_i, :, :, step_i],
+                                               phi_ref[samp_i, :, :, step_i])
+                if per_dim:
+                    error_u = jnp.linalg.norm(u_ref_i - u_pred) / jnp.linalg.norm(u_ref_i)
+                    error_v = jnp.linalg.norm(v_ref_i - v_pred) / jnp.linalg.norm(v_ref_i)
+                    error_phi = jnp.linalg.norm(phi_ref_i - phi_pred) / jnp.linalg.norm(phi_ref_i)
+                    errors.append([error_u, error_v, error_phi])
+                else:
+                    stack_pred = jnp.stack([u_pred, v_pred, phi_pred], axis=-1)
+                    stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
+                    error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
+                    errors.append(error)
 
     else:
 
         errors = []
         x_shape = u_ref.shape[0]
         y_shape = u_ref.shape[1]
-        pred_array = jnp.zeros((len(data_batch), x_shape, y_shape, 3))
-        hist_array = []
-        for i, data in enumerate(data_batch):
-            inputs, _ = data
-            u_in, trunk_in = inputs
-            x, y, delta_u = trunk_in
-            s = fraction_apply_net(model_fn, params, u_in, x, y, delta_u)
-            pred_array = pred_array.at[i, :, :, :].set(s)
-            u, v, phi = s[:, :, 0], s[:, :, 1], s[:, :, 2]
-            u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
-            if per_dim:
-                error_u = jnp.linalg.norm(u_ref_i - u) / jnp.linalg.norm(u_ref_i)
-                error_v = jnp.linalg.norm(v_ref_i - v) / jnp.linalg.norm(v_ref_i)
-                error_phi = jnp.linalg.norm(phi_ref_i - phi) / jnp.linalg.norm(phi_ref_i)
-                errors.append([error_u, error_v, error_phi])
-            else:
-                stack_pred = jnp.stack([u, v, phi], axis=-1)
-                stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
-                error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
-                errors.append(error)
+        pred_array_all = jnp.zeros((len(data_batch), x_shape, y_shape, 3))
+        hist_array_all = []
+        for samp_i in range(samp_num):
+            for step_i in range(step_num):
+                i = samp_i * step_num + step_i
+                inputs, _ = data_batch[i]
+                u_in, trunk_in = inputs
+                x, y, delta_u = trunk_in
+                s = fraction_apply_net(model_fn, params, u_in, x, y, delta_u)
+                pred_array_all = pred_array_all.at[i, :, :, :].set(s)
+                u, v, phi = s[:, :, 0], s[:, :, 1], s[:, :, 2]
+                u_ref_i, v_ref_i, phi_ref_i = u_ref[:, :, i], v_ref[:, :, i], phi_ref[:, :, i]
+                if per_dim:
+                    error_u = jnp.linalg.norm(u_ref_i - u) / jnp.linalg.norm(u_ref_i)
+                    error_v = jnp.linalg.norm(v_ref_i - v) / jnp.linalg.norm(v_ref_i)
+                    error_phi = jnp.linalg.norm(phi_ref_i - phi) / jnp.linalg.norm(phi_ref_i)
+                    errors.append([error_u, error_v, error_phi])
+                else:
+                    stack_pred = jnp.stack([u, v, phi], axis=-1)
+                    stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
+                    error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
+                    errors.append(error)
 
     if return_data:
-        return jnp.array(errors), pred_array, hist_array
+        return jnp.array(errors), pred_array_all, hist_array_all
     else:
         return jnp.array(errors)
 
@@ -482,34 +504,40 @@ def main_routine(args):
     # H in testing will be calculated from the predicted u, v, \phi
 
     # Problem settings
-    num_load = 7
     num_cols = 162
     num_rows = 162
+    # test_samples defines number of samples used for testing
+    test_samples = 3
 
     # Load training data
-    path_dataset = os.path.join(os.getcwd(), 'data/fracture/dataset1.mat')
+    path_dataset = os.path.join(os.getcwd(), 'data/fracture/TensileFailure.mat')
     dataset_all = scipy.io.loadmat(path_dataset)
-    x = dataset_all['cordinates']
-    phi = dataset_all['phi']
-    u = dataset_all['u']
-    v = dataset_all['v']
-    stress_train = dataset_all['stress']
+    coords = dataset_all['coordinates']
 
-    path_dataset_hist = os.path.join(os.getcwd(), 'data/fracture/history1.mat')
-    dataset_hist = scipy.io.loadmat(path_dataset_hist)
-    hist = dataset_hist['hist']
+    f_phi = dataset_all['f_phi'] # initial condition
+    disp_x = dataset_all['dispX'] # displacement in x, network will predict this
+    disp_y = dataset_all['dispY'] # displacement in y, network will predict this
+    phi = dataset_all['phi'] # damage field, network will predict this
+    app_disp = dataset_all['app_disp'][0]
+    history = dataset_all['history']
 
-    x_cord = x[:num_cols, 0].reshape(-1, 1)
-    y_cord = x[::num_cols, 1].reshape(-1, 1)
+    x_coord = coords[:num_cols, 0].reshape(-1, 1)
+    y_coord = coords[::num_cols, 1].reshape(-1, 1)
 
-    u_train = jnp.zeros((num_rows, num_cols, num_load))
-    v_train = jnp.zeros((num_rows, num_cols, num_load))
-    phi_train = jnp.zeros((num_rows, num_cols, num_load))
+    step_num = len(app_disp)
+    samp_num = f_phi.shape[0]
 
-    for i in range(num_load):
-        u_train = u_train.at[:, :, i].set(u[:, i].reshape(num_rows, num_cols))
-        v_train = v_train.at[:, :, i].set(v[:, i].reshape(num_rows, num_cols))
-        phi_train = phi_train.at[:, :, i].set(phi[:, i].reshape(num_rows, num_cols))
+    u_all = jnp.zeros((samp_num, num_rows, num_cols, step_num))
+    v_all = jnp.zeros((samp_num, num_rows, num_cols, step_num))
+    phi_all = jnp.zeros((samp_num, num_rows, num_cols, step_num))
+    f_phi_all = jnp.zeros((samp_num, num_rows, num_cols))
+
+    for i in range(samp_num):
+        for j in range(step_num):
+            u_all = u_all.at[i, :, :, j].set(disp_x[i, :, j].reshape(num_rows, num_cols))
+            v_all = v_all.at[i, :, :, j].set(disp_y[i, :, j].reshape(num_rows, num_cols))
+            phi_all = phi_all.at[i, :, :, j].set(phi[i, :, j].reshape(num_rows, num_cols))
+        f_phi_all = f_phi_all.at[i, :, :].set(f_phi[i, :].reshape(num_rows, num_cols))
 
     # Full separable approach is not possible for this as history fields and stress have to be combined
     # For this example, we rectify this by using batches over stress in the trunk and history in the branch
@@ -518,46 +546,34 @@ def main_routine(args):
     # Prepare training batches
     data_batches = []
     res_batches = []
-
-    for i in range(num_load):
-        branch_input = jnp.zeros((1, num_rows, num_cols, 3)) #1 at the front for batch size needed for branch
-        branch_input = branch_input.at[0, :, :, 0].set(hist[:, i].reshape(num_rows, num_cols))
-        if i-1 >= 0:
-            branch_input = branch_input.at[0, :, :, 1].set(hist[:, i-1].reshape(num_rows, num_cols))
-        if i-2 >= 0:
-            branch_input = branch_input.at[0, :, :, 2].set(hist[:, i-2].reshape(num_rows, num_cols))
-        res_batches.append(((branch_input, [x_cord, y_cord, stress_train[i].reshape(-1,1)]), []))
-        data_batches.append(((branch_input, [x_cord, y_cord, stress_train[i].reshape(-1,1)]),
-                             (u_train[:, :, i], v_train[:, :, i], phi_train[:, :, i])))
-
-    # Prepare test data
-    path_dataset_test = os.path.join(os.getcwd(), 'data/fracture/dataset5.mat')
-    dataset_test = scipy.io.loadmat(path_dataset_test)
-    x_test = dataset_test['cordinates']
-    phi = dataset_test['phi']
-    u = dataset_test['u']
-    v = dataset_test['v']
-    stress_test = dataset_test['stress']
-    x_cord_test = x_test[:num_cols, 0].reshape(-1,1)
-    y_cord_test = x_test[::num_cols, 1].reshape(-1,1)
-    num_load_test = 7
-
-    crackTip = 0.5 # Crack tip location TODO: Check if this is correct / where do i get the location from?
-
-    u_test = jnp.zeros((num_rows, num_cols, num_load_test))
-    v_test = jnp.zeros((num_rows, num_cols, num_load_test))
-    phi_test = jnp.zeros((num_rows, num_cols, num_load_test))
-
-    for i in range(num_load_test):
-        u_test = u_train.at[:, :, i].set(u[:, i].reshape(num_rows, num_cols))
-        v_test = v_train.at[:, :, i].set(v[:, i].reshape(num_rows, num_cols))
-        phi_test = phi_train.at[:, :, i].set(phi[:, i].reshape(num_rows, num_cols))
-
-    #path_dataset_hist_test = os.path.join(os.getcwd(), 'data/fracture/history5.mat')
-
     test_batches = []
-    for i in range(num_load):
-        test_batches.append([x_cord_test, y_cord_test, stress_test[i].reshape(-1, 1)])
+
+    # Prepare training and test data
+    for i in range(samp_num):
+        if i < samp_num - test_samples:
+            for j in range(step_num):
+                branch_input = jnp.zeros((1, num_rows, num_cols, 3))  # 1 at the front for batch size needed for branch
+                branch_input = branch_input.at[0, :, :, 0].set(history[i, :, j].reshape(num_rows, num_cols))
+                if i-1 >= 0:
+                    branch_input = branch_input.at[0, :, :, 1].set(history[i, :, j-1].reshape(num_rows, num_cols))
+                if i-2 >= 0:
+                    branch_input = branch_input.at[0, :, :, 2].set(history[i, :, j-2].reshape(num_rows, num_cols))
+
+                res_batches.append(((branch_input, [x_coord, y_coord, app_disp[j].reshape(-1, 1)]), []))
+                data_batches.append(((branch_input, [x_coord, y_coord, app_disp[j].reshape(-1, 1)]),
+                                     (u_all[i, :, :, j], v_all[i, :, :, j], phi_all[i, :, :])))
+        else:
+            branch_input = jnp.zeros((1, num_rows, num_cols, 3))  # 1 at the front for batch size needed for branch
+            branch_input = branch_input.at[0, :, :, 0].set(history[i, :, 0].reshape(num_rows, num_cols))
+            test_batches.append((branch_input, [x_coord, y_coord, app_disp.reshape(-1, 1)]))
+
+    # Reference data for training and testing
+    train_ref = [u_all[:samp_num - test_samples, :, :, :],
+                 v_all[:samp_num - test_samples, :, :, :],
+                 phi_all[:samp_num - test_samples, :, :]]
+    test_ref = [u_all[samp_num - test_samples:, :, :, :],
+                v_all[samp_num - test_samples:, :, :, :],
+                phi_all[samp_num - test_samples:, :, :]]
 
     # Create data generators
     data_dataset = DataGenerator(data_batches)
@@ -635,11 +651,9 @@ def main_routine(args):
     # First visualization
     if args.vis_iter > 0:
         # Visualize train example
-        viz_loop(model_fn, params, res_batches, u_train, v_train, phi_train, num_load, False, 0,
-                 offset_epoch, result_dir)
+        viz_loop(model_fn, params, res_batches, train_ref, False, offset_epoch, result_dir)
         # Visualize test example
-        viz_loop(model_fn, params, test_batches, u_test, v_test, phi_test, num_load_test, True, crackTip,
-                 offset_epoch, result_dir)
+        viz_loop(model_fn, params, test_batches, test_ref, True, offset_epoch, result_dir)
 
     # Iterations
     pbar = tqdm.trange(args.epochs)
@@ -665,8 +679,8 @@ def main_routine(args):
             loss_res_value = loss_res(model_fn, params, res_batch)
 
             # compute error over test data
-            errors = get_errors(model_fn, params, test_batches, u_test, v_test, phi_test, train=False,
-                                return_data=False, per_dim=False, crackTip=crackTip)
+            errors = get_errors(model_fn, params, test_batches, test_ref, train=False,
+                                return_data=False, per_dim=False)
 
             err_val = jnp.mean(errors)
 
@@ -690,11 +704,9 @@ def main_routine(args):
         # Visualize result
         if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
             # Visualize train example
-            viz_loop(model_fn, params, res_batches, u_train, v_train, phi_train, num_load, False, 0,
-                     offset_epoch+it+1, result_dir)
+            viz_loop(model_fn, params, res_batches, train_ref, False, 0, offset_epoch+it+1, result_dir)
             # Visualize test example
-            viz_loop(model_fn, params, test_batches, u_test, v_test, phi_test, num_load_test, True, crackTip,
-                     offset_epoch+it+1, result_dir)
+            viz_loop(model_fn, params, test_batches, test_ref, True, offset_epoch+it+1, result_dir)
 
         # Save checkpoint
         mngr.save(
