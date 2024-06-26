@@ -176,7 +176,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 2])
     h = ax.imshow(damage_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  )#vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
+                  vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
     ax.set_title('Pred $\phi$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -207,7 +207,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 1])
     h = ax.imshow(yDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  )#vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
+                  vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
     ax.set_title('Pred $v$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -238,7 +238,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 0])
     h = ax.imshow(xDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  )#vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
+                  vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
     ax.set_title('Pred $u$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -499,8 +499,8 @@ def main_routine(args):
     dataset_hist = scipy.io.loadmat(path_dataset_hist)
     hist = dataset_hist['hist']
 
-    x_cord = x[:num_cols, 0].reshape(-1,1)
-    y_cord = x[::num_cols, 1].reshape(-1,1)
+    x_cord = x[:num_cols, 0].reshape(-1, 1)
+    y_cord = x[::num_cols, 1].reshape(-1, 1)
 
     u_train = jnp.zeros((num_rows, num_cols, num_load))
     v_train = jnp.zeros((num_rows, num_cols, num_load))

@@ -80,7 +80,7 @@ def loss_ics(model_fn, params, ics_batch):
     loss_ic_u = mse(outputs[:, :, 0].flatten(), s_pred[:, :, :, 0].flatten())
     loss_ic_p = mse(outputs[:, :, 1].flatten(), s_pred[:, :, :, 1].flatten())
 
-    return loss_ic_u + loss_ic_p
+    return 10.0*loss_ic_u + loss_ic_p
 
 
 def apply_net_squeeze(model_fn, params, u, t, z):
@@ -149,14 +149,14 @@ def loss_res(model_fn, params, batch):
     loss_pred_1 = mse_single(pred_1)
     loss_pred_2 = mse_single(pred_2)
 
-    return loss_pred_1 +  loss_pred_2
+    return loss_pred_1 + loss_pred_2
 
 
 def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value =  loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = 40.0*loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 

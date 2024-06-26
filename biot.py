@@ -134,7 +134,7 @@ def loss_ics(model_fn, params, ics_batch):
     loss_ic_u = mse(outputs[:, 0].flatten(), s_pred[:, 0])
     loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])
 
-    return loss_ic_u + loss_ic_p
+    return 10.0*loss_ic_u + 5.0*loss_ic_p
 
 
 def loss_bcs(model_fn, params, bcs_batch):
@@ -202,7 +202,7 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = 40.0*loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 
@@ -338,7 +338,7 @@ def main_routine(args):
 
     # ICs data
     u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
-                                                      in_axes=(0, 0, 0, None))
+                                                      in_axes=(0, 0, None))
                                              (u0_train, p0_train, args.p_ics_train))
     u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train, -1)
     y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train, -1)
@@ -355,7 +355,7 @@ def main_routine(args):
 
     # Residual data
     u_res_train, y_res_train, s_res_train = (jax.vmap(generate_one_res_training_data,
-                                                      in_axes=(0, 0, None))
+                                                      in_axes=(0, None))
                                              (u0_train, args.p_res_train))
 
     u_res_train = u_res_train.reshape(args.n_train * args.p_res_train, -1)
