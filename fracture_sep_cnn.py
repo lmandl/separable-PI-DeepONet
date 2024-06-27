@@ -74,7 +74,7 @@ def loss_data(model_fn, params, data_batch):
 
     loss_hist = mse(history_pred, history_ref)
 
-    loss_data_val = 1e5 * loss_u + 1e4 * loss_v + loss_phi + 1e-3 * loss_hist
+    loss_data_val = 1e5 * loss_u + 1e4 * loss_v + loss_phi + 1e-2 * loss_hist
 
     return loss_data_val
 
@@ -132,7 +132,7 @@ def loss_res(model_fn, params, res_batch):
     psi_pos = 0.125 * lmd * (eigSum + jnp.abs(eigSum)) ** 2 + \
               0.25 * mu * ((lambda1 + jnp.abs(lambda1)) ** 2 + (lambda2 + jnp.abs(lambda2)) ** 2)
 
-    hist_prev = u_in[0, :, :, 0] # TODO: Check if this is correct
+    hist_prev = u_in[0, :, :, 0]
     hist = jnp.maximum(hist_prev, psi_pos)
     sigmaX = c11 * u_x + c12 * v_y
     sigmaY = c21 * u_x + c22 * v_y
@@ -179,7 +179,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 2])
     h = ax.imshow(damage_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
+                  )#vmin=jnp.amin(damage_true_print), vmax=jnp.amax(damage_true_print))
     ax.set_title('Pred $\phi$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -210,7 +210,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 1])
     h = ax.imshow(yDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
+                  )#vmin=jnp.amin(yDisp_true_print), vmax=jnp.amax(yDisp_true_print))
     ax.set_title('Pred $v$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -241,7 +241,7 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
 
     ax = fig.add_subplot(gs[0, 0])
     h = ax.imshow(xDisp_pred_print, origin='lower', interpolation='nearest', cmap='jet', aspect=1,
-                  vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
+                  )#vmin=jnp.amin(xDisp_true_print), vmax=jnp.amax(xDisp_true_print))
     ax.set_title('Pred $u$(x)')
     ax.axes.xaxis.set_visible(False)
     ax.axes.yaxis.set_visible(False)
@@ -270,17 +270,16 @@ def visualize(damage_pred_print, damage_true_print, xDisp_pred_print, xDisp_true
     cax = divider.append_axes("right", size="5%", pad=0.05)
     fig.colorbar(h, ax=ax, cax=cax, format=cbformat)
 
-    if test:
-        plot_dir = os.path.join(folder, f'vis/{epoch:06d}/test_sample_{sample_i}_step_{step_i}/')
-    else:
-        plot_dir = os.path.join(folder, f'vis/{epoch:06d}/train_sample_{sample_i}_step_{step_i}/')
+    plot_dir = os.path.join(folder, f'vis/{epoch:06d}/')
 
     if not os.path.exists(plot_dir):
         os.makedirs(plot_dir)
 
-    #fig.tight_layout()
+    if test:
+        plt.savefig(os.path.join(os.path.join(folder, plot_dir), f'test_sample_{sample_i}_step_{step_i}.png'))
+    else:
+        plt.savefig(os.path.join(os.path.join(folder, plot_dir), f'train_sample_{sample_i}_step_{step_i}.png'))
 
-    plt.savefig(os.path.join(os.path.join(folder, plot_dir), 'pred.png'))
     plt.close(fig)
 
 
@@ -304,7 +303,7 @@ def viz_loop(model_fn, params, data_batch, ref_sol, test_flag, epoch, result_dir
                                                ref_sol[1][samp_i, :, :, step_i],
                                                ref_sol[2][samp_i, :, :, step_i])
                 visualize(phi_pred, phi_ref_i, u_pred, u_ref_i, v_pred, v_ref_i, epoch, result_dir, samp_i, step_i,
-                          test_flag, errors[i,:])
+                          test_flag, errors[i, :])
 
     else:
 
@@ -326,7 +325,6 @@ def viz_loop(model_fn, params, data_batch, ref_sol, test_flag, epoch, result_dir
 def get_hist(model_fn, params, u_in, x, y, delta_u, hist, f_phi, mu, lmd, gc, l, B):
 
     # Calculate hist from u, v, phi and current history field
-    init_hist = f_phi
 
     # obtain net predictions / gradients
     t_x = jnp.ones(x.shape)
@@ -348,7 +346,7 @@ def get_hist(model_fn, params, u_in, x, y, delta_u, hist, f_phi, mu, lmd, gc, l,
     sEnergy_pos = (0.125*lmd * (eigSum + jnp.abs(eigSum))**2 +
                    0.25*mu*((lambda1 + jnp.abs(lambda1))**2 + (lambda2 + jnp.abs(lambda2))**2))
 
-    hist_temp = jnp.maximum(init_hist, sEnergy_pos)
+    hist_temp = jnp.maximum(f_phi, sEnergy_pos)
     hist = jnp.maximum(hist, hist_temp)
 
     return hist
@@ -378,7 +376,7 @@ def auto_regression(model_fn, params, data_batch, f_phi):
     hist_array = jnp.zeros((num_rows, num_cols, n_t))
 
     # Set the initial history field
-    hist_array = hist_array.at[:, :, 0].set(f_phi)
+    hist_array = hist_array.at[:, :, 0].set(branch_in[0, :, :, 0])
 
     # Array to store predictions
     pred_array = jnp.zeros((n_t, num_rows, num_cols, 3))
@@ -390,8 +388,7 @@ def auto_regression(model_fn, params, data_batch, f_phi):
     for i in range(0, n_t):
         u_in = jnp.zeros((1, num_rows, num_cols, 1))  # 1 at the front for batch size needed for branch
         u_in = u_in.at[0, :, :, 0].set(hist_array[:, :, i])
-
-        delta_u = trunk_ins[2][i]
+        delta_u = trunk_ins[2][i].reshape(-1, 1)
 
         # Get the prediction
         y_pred = fraction_apply_net(model_fn, params, u_in, x, y, delta_u)
@@ -434,14 +431,16 @@ def get_errors(model_fn, params, data_batch, ref_sol, train=False, return_data=F
             pred_array, hist_array = auto_regression(model_fn, params, data_i, f_phi_i)
             hist_array_all.at[samp_i, :, :, :].set(hist_array)
 
+
             for step_i in range(step_num):
                 # Store the predictions
-                pred_array_all.at[samp_i, :, :, step_i, :].set(pred_array[step_i, :, :, :])
+                pred_array_all = pred_array_all.at[samp_i, :, :, step_i, 0].set(pred_array[step_i, :, :, 0])
+                pred_array_all = pred_array_all.at[samp_i, :, :, step_i, 1].set(pred_array[step_i, :, :, 1])
+                pred_array_all = pred_array_all.at[samp_i, :, :, step_i, 2].set(pred_array[step_i, :, :, 2])
 
-                i = samp_i * step_num + step_i
-                u_pred, v_pred, phi_pred = (pred_array[i, :, :, 0],
-                                            pred_array[i, :, :, 1],
-                                            pred_array[i, :, :, 2])
+                u_pred, v_pred, phi_pred = (pred_array[step_i, :, :, 0],
+                                            pred_array[step_i, :, :, 1],
+                                            pred_array[step_i, :, :, 2])
                 u_ref_i, v_ref_i, phi_ref_i = (u_ref[samp_i, :, :, step_i],
                                                v_ref[samp_i, :, :, step_i],
                                                phi_ref[samp_i, :, :, step_i])
@@ -455,7 +454,6 @@ def get_errors(model_fn, params, data_batch, ref_sol, train=False, return_data=F
                     stack_ref = jnp.stack([u_ref_i, v_ref_i, phi_ref_i], axis=-1)
                     error = jnp.linalg.norm(stack_ref - stack_pred) / jnp.linalg.norm(stack_ref)
                     errors.append(error)
-
     else:
         # Train Error
         pred_array_all = jnp.zeros((len(data_batch), x_shape, y_shape, 3))
