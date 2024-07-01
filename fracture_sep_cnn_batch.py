@@ -18,21 +18,116 @@ import orbax.checkpoint as ocp
 from models import setup_deeponet, step, mse
 from models import apply_net_sep as apply_net
 
+
+def convert_to_jax_arrays_res(res_batches):
+    branch_in = []
+    x_coords = []
+    y_coords = []
+    app_disp = []
+
+    for data in res_batches:
+        branch, (x, y, disp) = data
+        branch_in.append(branch)
+        x_coords.append(x)
+        y_coords.append(y)
+        app_disp.append(disp)
+
+    return (
+        jnp.array(branch_in),
+        jnp.array(x_coords),
+        jnp.array(y_coords),
+        jnp.array(app_disp),
+    )
+
+def convert_to_jax_arrays_data(data_batches):
+    branch_in = []
+    x_coords = []
+    y_coords = []
+    app_disp = []
+    u_ref = []
+    v_ref = []
+    phi_ref = []
+    hist_ref = []
+    f_phi = []
+
+    for data in data_batches:
+        (branch, (x, y, disp)), (u, v, phi, hist), f = data
+        branch_in.append(branch)
+        x_coords.append(x)
+        y_coords.append(y)
+        app_disp.append(disp)
+        u_ref.append(u)
+        v_ref.append(v)
+        phi_ref.append(phi)
+        hist_ref.append(hist if hist is not None else jnp.zeros_like(u))  # Handle None with zeros
+        f_phi.append(f)
+
+    return (
+        jnp.array(branch_in),
+        jnp.array(x_coords),
+        jnp.array(y_coords),
+        jnp.array(app_disp),
+        jnp.array(u_ref),
+        jnp.array(v_ref),
+        jnp.array(phi_ref),
+        jnp.array(hist_ref),
+        jnp.array(f_phi),
+    )
+
+
 # Data Generator
-class DataGenerator(data.Dataset):
-    def __init__(self, data):
-        self.data = data
+class ResBatchGenerator(data.Dataset):
+    def __init__(self, res_batches, batch_size, key):
+        self.res_batches = res_batches
+        self.N = len(res_batches)
+        self.batch_size = batch_size
+        self.key = key
 
-    def __getitem__(self, index):
-        """Generate one example of data"""
-        example = self.__data_generation(index)
-        return example
+        # Convert res_batches components to JAX arrays
+        self.branch_in, self.x_coords, self.y_coords, self.app_disp = convert_to_jax_arrays_res(res_batches)
 
-    @partial(jax.jit, static_argnums=(0,))
+    def __getitem__(self, idx):
+        self.key, subkey = jax.random.split(self.key)
+        idx = jax.random.choice(subkey, self.N, (self.batch_size,), replace=False)
+
+        batch = self.__data_generation(idx)
+
+        return batch
+
     def __data_generation(self, idx):
-        """Generates data containing one sample"""
-        example = self.data[idx]
-        return example
+        batch = (
+            self.branch_in[idx],
+            self.x_coords[idx], self.y_coords[idx], self.app_disp[idx]
+        )
+        return batch
+
+class DataBatchGenerator(data.Dataset):
+    def __init__(self, data_batches, batch_size, key):
+        self.data_batches = data_batches
+        self.N = len(data_batches)
+        self.batch_size = batch_size
+        self.key = key
+
+        # Convert data_batches components to JAX arrays
+        (self.branch_in, self.x_coords, self.y_coords, self.app_disp, self.u_ref, self.v_ref,
+         self.phi_ref, self.hist_ref, self.f_phi) = convert_to_jax_arrays_data(data_batches)
+
+    def __getitem__(self, idx):
+        self.key, subkey = jax.random.split(self.key)
+        idx = jax.random.choice(subkey, self.N, (self.batch_size,), replace=False)
+
+        batch = self.__data_generation(idx)
+
+        return batch
+
+    def __data_generation(self, idx):
+        batch = (
+            self.branch_in[idx],
+            self.x_coords[idx], self.y_coords[idx], self.app_disp[idx],
+            self.u_ref[idx], self.v_ref[idx], self.phi_ref[idx], self.hist_ref[idx],
+            self.f_phi[idx]
+        )
+        return batch
 
 
 @partial(jax.jit, static_argnums=(0,))
@@ -373,10 +468,9 @@ def auto_regression(model_fn, params, inputs, f_phi, E=210.0*1e3, nu=0.3):
 
 
 @partial(jax.jit, static_argnums=(0,))
-def loss_data(model_fn, params, data_batch):
-    inputs, ref_data, f_phi = data_batch
+def loss_data(model_fn, params, branch_in, x_coords, y_coords, app_disp, u_ref, v_ref, phi_ref, history_ref, f_phi):
 
-    u_ref, v_ref, phi_ref, history_ref = ref_data
+    inputs = (branch_in, (x_coords, y_coords, app_disp))
 
     # Calculate history field and predictions
     s, history_pred = auto_regression(model_fn, params, inputs, f_phi)
@@ -394,20 +488,13 @@ def loss_data(model_fn, params, data_batch):
     else:
         loss_hist = 0.0
 
-    loss_data_val = 1e5 * loss_u + 1e4 * loss_v + loss_phi # + 1e-3 * loss_hist
+    loss_data_val = 1e3 * loss_u + 1e2 * loss_v + loss_phi + 1e-2 * loss_hist
 
     return loss_data_val
 
 
 @partial(jax.jit, static_argnums=(0,))
-def loss_res(model_fn, params, res_batch):
-
-    # Fetch data
-    u_in, trunk_in = res_batch
-
-    x = trunk_in[0]
-    y = trunk_in[1]
-    delta_u = trunk_in[2]
+def loss_res(model_fn, params, u_in, x, y, delta_u):
 
     # Define constants
     E = 210.0 * 1e3
@@ -463,10 +550,31 @@ def loss_res(model_fn, params, res_batch):
     return E_c_mean + 10.0 * E_e_mean
 
 @partial(jax.jit, static_argnums=(0,))
+def loss_data_loop(model_fn, params, data_batches):
+    branch_in, x_coords, y_coords, app_disp, u_ref, v_ref, phi_ref, hist_ref, f_phi = data_batches
+
+    data_l = jax.vmap(loss_data, in_axes=(None, None, 0, 0, 0, 0, 0, 0, 0, 0, 0))(model_fn, params, branch_in,
+                                                                                  x_coords, y_coords, app_disp, u_ref,
+                                                                                  v_ref, phi_ref, hist_ref, f_phi)
+
+    return jnp.mean(data_l)
+
+
+@partial(jax.jit, static_argnums=(0,))
+def loss_res_loop(model_fn, params, res_batches):
+    branch_in, x_coords, y_coords, app_disp = res_batches
+
+    res_l = jax.vmap(loss_res, in_axes=(None, None, 0, 0, 0, 0))(model_fn, params, branch_in,
+                                                                    x_coords, y_coords, app_disp)
+
+    return jnp.mean(res_l)
+
+
+@partial(jax.jit, static_argnums=(0,))
 def loss_fn(model_fn, params, ics_batch, data_batch, res_batch):
-    loss_data_i = loss_data(model_fn, params, data_batch)
-    loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = 1e4 * loss_data_i + loss_res_i
+    loss_data_i = loss_data_loop(model_fn, params, data_batch)
+    loss_res_i = loss_res_loop(model_fn, params, res_batch)
+    loss_value = 1e2 * loss_data_i + loss_res_i
     return loss_value
 
 
@@ -562,7 +670,7 @@ def main_routine(args):
     # Split key for data, residual, and model init
     seed = args.seed
     key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, 2)
+    keys = jax.random.split(key, 4)
 
     # Create and shuffle indices
     indices = jnp.arange(samp_num)
@@ -610,15 +718,15 @@ def main_routine(args):
                                      f_phi_all[i, :, :]))
 
     # Create data generators
-    data_dataset = DataGenerator(data_batches)
-    res_dataset = DataGenerator(res_batches)
+    data_dataset = DataBatchGenerator(data_batches, batch_size=num_batches, key=keys[1])
+    res_dataset = ResBatchGenerator(res_batches, batch_size=num_batches, key=keys[2])
 
     # Data
     data_data = iter(data_dataset)
     res_data = iter(res_dataset)
 
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[2])
+    args, model, model_fn, params = setup_deeponet(args, keys[3])
 
     # Define optimizer with optax (ADAM)
     # optimizer
@@ -798,12 +906,12 @@ if __name__ == "__main__":
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=50000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str,
                         default='exponential_decay', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=5000, help='decay steps for lr scheduler')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_decay_rate', type=float, default=0.95, help='decay rate for lr scheduler')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/fracture/separable/',
@@ -811,7 +919,7 @@ if __name__ == "__main__":
 
     # log settings
     parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
-    parser.add_argument('--vis_iter', type=int, default=25000, help='iteration to save visualization')
+    parser.add_argument('--vis_iter', type=int, default=2500, help='iteration to save visualization')
 
     # Checkpoint settings
     parser.add_argument('--checkpoint_path', type=str, default=None,
