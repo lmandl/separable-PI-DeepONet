@@ -190,7 +190,6 @@ def loss_res(model_fn, params, batch):
     v_x = jnp.ones(x.shape)
     v_t = jnp.ones(t.shape)
 
-    # Verify whether to use [0] or [1] for jvp
     s_t = jax.jvp(lambda t: apply_net(model_fn, params, u, t, x), (t,), (v_t,))[1]
     s_x, s_xx = hvp_fwdfwd(lambda x: apply_net(model_fn, params, u, t, x), (x,), (v_x,), True)
 

@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 from torch.utils import data
 from functools import partial
-import itertools
 import tqdm
 import time
 import optax
@@ -488,7 +487,7 @@ def loss_data(model_fn, params, branch_in, x_coords, y_coords, app_disp, u_ref, 
     else:
         loss_hist = 0.0
 
-    loss_data_val = 1e3 * loss_u + 1e2 * loss_v + loss_phi + 1e-2 * loss_hist
+    loss_data_val = 1e5 * loss_u + 1e4 * loss_v + loss_phi #+ 1e-3 * loss_hist
 
     return loss_data_val
 
@@ -574,7 +573,7 @@ def loss_res_loop(model_fn, params, res_batches):
 def loss_fn(model_fn, params, ics_batch, data_batch, res_batch):
     loss_data_i = loss_data_loop(model_fn, params, data_batch)
     loss_res_i = loss_res_loop(model_fn, params, res_batch)
-    loss_value = 1e2 * loss_data_i + loss_res_i
+    loss_value = 1e4 * loss_data_i + loss_res_i
     return loss_value
 
 
@@ -881,8 +880,8 @@ if __name__ == "__main__":
     # Branch settings
     parser.add_argument('--branch_cnn', dest='branch_cnn', default=True, action='store_true',)
     parser.add_argument('--branch_cnn_blocks', nargs="+", action='append',
-                        default=[[32, 3, 3, "relu"], ["max_pool", 2, 2, 2, 2], [64, 3, 3, "relu"],
-                                 ["max_pool", 2, 2, 2, 2], [256, "relu"], [256, "tanh"]],
+                        default=[[16, 3, 3, "relu"], ["max_pool", 2, 2, 2, 2], [32, 3, 3, "relu"],
+                                 ["max_pool", 2, 2, 2, 2], [256, "relu"], [100, "tanh"]],
                         help='branch cnn blocks, list of length 4 are Conv2D blocks (features, kernel_size_1, '
                              'kernel_size 2, ac_fun); list of length 5 are Pool2D blocks (pool_type, kernel_size_1, '
                              'kernel_size_2, stride_1, stride_2); list of length 2 are Dense blocks (features, ac_fun);'
@@ -905,12 +904,12 @@ if __name__ == "__main__":
 
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=50000, help='training epochs')
+    parser.add_argument('--lr', type=float, default=5e-4, help='learning rate')
+    parser.add_argument('--epochs', type=int, default=100000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str,
                         default='exponential_decay', choices=['constant', 'exponential_decay'],
                         help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=5000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.95, help='decay rate for lr scheduler')
 
     # result directory
@@ -924,7 +923,7 @@ if __name__ == "__main__":
     # Checkpoint settings
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='path to checkpoint file for restoring, uses latest checkpoint')
-    parser.add_argument('--checkpoint_iter', type=int, default=5000,
+    parser.add_argument('--checkpoint_iter', type=int, default=2500,
                         help='iteration of checkpoint file')
     parser.add_argument('--checkpoints_to_keep', type=int, default=1,
                         help='number of checkpoints to keep')
