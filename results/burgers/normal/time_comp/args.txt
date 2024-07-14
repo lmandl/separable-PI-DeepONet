@@ -12,12 +12,12 @@ trunk_input_features: 2
 split_trunk: False
 seed: 1337
 lr: 0.001
-epochs: 50000
+epochs: 1000
 lr_scheduler: exponential_decay
 lr_schedule_steps: 1000
 lr_decay_rate: 0.95
 result_dir: results/burgers/normal/
-log_iter: 1000
+log_iter: 100
 vis_iter: 0
 n_train: 1000
 n_test: 1000
@@ -27,7 +27,7 @@ p_res_train: 2500
 p_test: 101
 batch_size: 100000
 checkpoint_path: None
-checkpoint_iter: 5000
-checkpoints_to_keep: 1
+checkpoint_iter: 100
+checkpoints_to_keep: 50
 branch_cnn: False
 total_params: 131701

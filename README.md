@@ -8,27 +8,21 @@ Authors: Somdatta Goswami, Luis Mandl
 ### Models
 
 #### Implemented
-* Burgers Equation (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
-* Biot's Equation for Consolidation
 * physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
 * separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
-
-#### Current TODOs
-* fracture mechanics examples
+* Burgers Equation (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
+* Biot's Equation for Consolidation
+* Heat equation
 
 #### Upcoming Tasks
 * include loss weights as args
-* inputs with several values per sensor in branch
-* Review usage of p_** throughout the code
+* inputs with several values per sensor in branch / factorized branch
 
 #### Potential Extensions
 * hard enforcement of dirichlet BCs (https://www.sciencedirect.com/science/article/pii/S0045782522001207)
 * modified MLP see (https://epubs.siam.org/doi/10.1137/20M1318043 and https://jwcho5576.github.io/spinn.github.io/)
 * include NTK based weighting schemes and improved architecture (https://doi.org/10.1007/s10915-022-01881-0)
 * L2 relative error loss functions
-
-#### Note on dimensions
-Please note that all problems are spatiotemporal problems and we denote spatial dimensions here. Hence, Biot's equation for consolidation in 1D take both vertical position z and time t as input.
 
 #### Multiple inputs to branch network
 function with several values per sensor can be included which will be achieved by flattening the input in the DeepONet 
@@ -49,8 +43,3 @@ Reference Codes:
   * unstacked DeepONets best according to https://arxiv.org/abs/1910.03193
     > "Compared to stacked DeepONets, although unstacked DeepONets have larger training error, the test error is smaller, due to the smaller generalization error. Therefore, unstacked DeepONets with bias achieve the best performance. In addition, unstacked DeepONets have fewer number of parameters than stacked DeepONets, and thus can be trained faster using much less memory."
 * Which strategy for multiple ($n$) outputs?
-  * n independent DeepONets
-  * split branch and trunk in n groups
-  * split branch in n groups, share trunk
-  * share branch, split trunk in n groups
-* Multiple inputs to branch (e.g. two outputs (u,p) and two inputs (u, p)?)

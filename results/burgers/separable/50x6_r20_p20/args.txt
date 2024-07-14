@@ -18,7 +18,7 @@ lr_schedule_steps: 1000
 lr_decay_rate: 0.95
 result_dir: results/burgers/separable
 log_iter: 1000
-vis_iter: 50000
+vis_iter: 0
 n_train: 1000
 n_test: 1000
 p_ics_train: 101

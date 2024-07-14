@@ -134,7 +134,7 @@ def loss_ics(model_fn, params, ics_batch):
     loss_ic_u = mse(outputs[:, 0].flatten(), s_pred[:, 0])
     loss_ic_p = mse(outputs[:, 1].flatten(), s_pred[:, 1])
 
-    return 10.0*loss_ic_u + 5.0*loss_ic_p
+    return loss_ic_u + loss_ic_p
 
 
 def loss_bcs(model_fn, params, bcs_batch):
@@ -155,7 +155,7 @@ def loss_bcs(model_fn, params, bcs_batch):
     loss_s_bc_2_u = mse(s_bc2_pred[:, 0], outputs[:, 2])  # u(t, 1) = 0
     loss_s_bc_2_p = mse(s_z_bc2_pred, outputs[:, 3])  # p_z(t, 1) = 0
 
-    return loss_s_bc_1_u + loss_s_bc_1_p +loss_s_bc_2_u + loss_s_bc_2_p
+    return loss_s_bc_1_u + loss_s_bc_1_p + loss_s_bc_2_u + loss_s_bc_2_p
 
 
 # Define residual loss
@@ -202,7 +202,7 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ics(model_fn, params, ics_batch)
     loss_bcs_i = loss_bcs(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = 40.0*loss_ics_i + loss_bcs_i + loss_res_i
+    loss_value = loss_ics_i + loss_bcs_i + loss_res_i
     return loss_value
 
 
@@ -469,6 +469,7 @@ def main_routine(args):
 
         if it % args.log_iter == 0:
             # Compute losses
+            loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
             loss_ics_value = loss_ics(model_fn, params, ics_batch)
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
@@ -500,11 +501,12 @@ def main_routine(args):
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
         # Visualize result
-        if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
-            # Visualize train example
-            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
-            # Visualize test example
-            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
+        if args.vis_iter > 0:
+            if (it + 1) % args.vis_iter == 0:
+                # Visualize train example
+                visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
+                # Visualize test example
+                visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
 
         # Save checkpoint
         mngr.save(
@@ -561,10 +563,10 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=200000, help='training epochs')
-    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
-                        help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
+    parser.add_argument('--lr_scheduler', type=str, default='exponential_decay',
+                        choices=['constant', 'exponential_decay'], help='learning rate scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=7500, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_decay_rate', type=float, default=0.85, help='decay rate for lr scheduler')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/biot/normal/',

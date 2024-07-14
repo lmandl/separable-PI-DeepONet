@@ -17,7 +17,6 @@ from models import apply_net_sep as apply_net
 
 # Data Generator
 class DataGeneratorIC(data.Dataset):
-    # IC has same t for all samples in y
     def __init__(self, u, t, x, s, batch_size, gen_key):
         self.u = u
         self.x = x
@@ -48,7 +47,6 @@ class DataGeneratorIC(data.Dataset):
 
 
 class DataGeneratorBC(data.Dataset):
-    # IC has same t for all samples in y
     def __init__(self, u, x, s, batch_size, gen_key, p_bc):
         self.u = u
         self.x = x
@@ -436,6 +434,7 @@ def main_routine(args):
 
         if it % args.log_iter == 0:
             # Compute losses
+            loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
             loss_ics_value = loss_ics(model_fn, params, ics_batch)
             loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
@@ -467,11 +466,12 @@ def main_routine(args):
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
 
         # Visualize result
-        if (it+1) % args.vis_iter == 0 and args.vis_iter > 0:
-            # Visualize train example
-            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
-            # Visualize test example
-            visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
+        if args.vis_iter > 0:
+            if (it + 1) % args.vis_iter == 0:
+                # Visualize train example
+                visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_train, False)
+                # Visualize test example
+                visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, k_test, True)
 
         # Save checkpoint
         mngr.save(
@@ -528,8 +528,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=1337, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--epochs', type=int, default=100000, help='training epochs')
-    parser.add_argument('--lr_scheduler', type=str, default='constant', choices=['constant', 'exponential_decay'],
-                        help='learning rate scheduler')
+    parser.add_argument('--lr_scheduler', type=str, default='exponential_decay',
+                        choices=['constant', 'exponential_decay'], help='learning rate scheduler')
     parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
 

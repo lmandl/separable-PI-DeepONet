@@ -12,17 +12,13 @@ import matplotlib.pyplot as plt
 import shutil
 import orbax.checkpoint as ocp
 
-from models import setup_deeponet, mse, mse_single, step, hvp_fwdfwd
-from models import apply_net_sep as apply_net
+from models import setup_deeponet, mse, mse_single, apply_net, step
 
 
 # Data Generator
 class DataGenerator(data.Dataset):
-    def __init__(self, u, c, t, x, y, s, batch_size, gen_key):
+    def __init__(self, u, y, s, batch_size, gen_key):
         self.u = u
-        self.c = c
-        self.t = t
-        self.x = x
         self.y = y
         self.s = s
         self.N = u.shape[0]
@@ -40,64 +36,123 @@ class DataGenerator(data.Dataset):
         """Generates data containing batch_size samples"""
         idx = jax.random.choice(key_i, self.N, (self.batch_size,), replace=False)
         s = self.s[idx, :]
-        c = self.c
-        t = self.t
-        x = self.x
-        y = self.y
+        y = self.y[idx, :]
         u = self.u[idx, :]
         # Construct batch
-        inputs = (u, (t, x, y, c))
+        inputs = (u, y)
         outputs = s
         return inputs, outputs
 
 
-def loss_ic(model_fn, params, data_batch):
+# Generate ics training data corresponding to one input sample
+def generate_one_ics_training_data(t_ic, p=101):
+    t_0 = jnp.zeros((1, 1))
+    x_0 = jnp.linspace(0, 1, p+2)[1:-1]  # exclude boundaries
+    y_0 = jnp.linspace(0, 1, p+2)[1:-1]  # exclude boundaries
+    c_0 = jnp.logspace(1, 0, p)
+
+    t_mesh, x_mesh, y_mesh, c_mesh = jnp.meshgrid(t_0.flatten(), x_0.flatten(),
+                                                  y_0.flatten(), c_0.flatten(), indexing='ij')
+
+    y = jnp.vstack([t_mesh.flatten(), x_mesh.flatten(), y_mesh.flatten(), c_mesh.flatten()]).T
+
+    u = jnp.tile(t_ic, (p ** 3, 1))
+    s = u
+
+    return u, y, s
+
+
+# Generate bcs training data corresponding to one input sample
+def generate_one_bcs_training_data(t_ic, p=100):
+    # Note: This has 4 times the data as other arrays and thus needs longer to cycle through
+    t_bc = jnp.linspace(0, 1, p)
+
+    x_bc_train_11 = jnp.zeros((1, 1))
+    x_bc_train_12 = jnp.ones((1, 1))
+    x_bc_train_2 = jnp.linspace(0, 1, p)
+
+    y_bc_train_1 = jnp.linspace(0, 1, p)
+    y_bc_train_21 = jnp.zeros((1, 1))
+    y_bc_train_22 = jnp.ones((1, 1))
+
+    c_bc_train = jnp.logspace(1, 0, p)
+
+    x_mesh_11, y_mesh_11, t_mesh_11, c_mesh_11 = jnp.meshgrid(x_bc_train_11.flatten(), y_bc_train_1.flatten(),
+                                                              t_bc, c_bc_train.flatten(), indexing='ij')
+    x_mesh_12, y_mesh_12, t_mesh_12, c_mesh_12 = jnp.meshgrid(x_bc_train_12.flatten(), y_bc_train_1.flatten(),
+                                                              t_bc, c_bc_train.flatten(), indexing='ij')
+    x_mesh_21, y_mesh_21, t_mesh_21, c_mesh_21 = jnp.meshgrid(x_bc_train_2.flatten(), y_bc_train_21.flatten(),
+                                                              t_bc, c_bc_train.flatten(), indexing='ij')
+    x_mesh_22, y_mesh_22, t_mesh_22, c_mesh_22 = jnp.meshgrid(x_bc_train_2.flatten(), y_bc_train_22.flatten(),
+                                                              t_bc, c_bc_train.flatten(), indexing='ij')
+
+    y1 = jnp.vstack([t_mesh_11.flatten(), x_mesh_11.flatten(), y_mesh_11.flatten(), c_mesh_11.flatten()]).T
+    y2 = jnp.vstack([t_mesh_12.flatten(), x_mesh_12.flatten(), y_mesh_12.flatten(), c_mesh_12.flatten()]).T
+    y3 = jnp.vstack([t_mesh_21.flatten(), x_mesh_21.flatten(), y_mesh_21.flatten(), c_mesh_21.flatten()]).T
+    y4 = jnp.vstack([t_mesh_22.flatten(), x_mesh_22.flatten(), y_mesh_22.flatten(), c_mesh_22.flatten()]).T
+
+    u = jnp.tile(t_ic, (4 * p ** 3, 1))  # (4*p**3, 1)
+
+    y = jnp.vstack([y1, y2, y3, y4])  # (4*p**3, 1)
+
+    s = jnp.zeros((4 * p**3, 1))  # (4*p**3, 1)
+
+    return u, y, s
+
+
+# Generate res training data corresponding to one input sample
+def generate_one_res_training_data(t_ic, p=50):
+    t_res_i = jnp.linspace(0, 1, p)
+    x_res_i = jnp.linspace(0, 1, p)
+    y_res_i = jnp.linspace(0, 1, p)
+    c_res_i = jnp.logspace(1, 0, p)
+
+    t_res, x_res, y_res, c_res = jnp.meshgrid(t_res_i, x_res_i, y_res_i,
+                                              c_res_i, indexing='ij')
+
+    u = jnp.tile(t_ic, (p**4, 1))
+    y = jnp.vstack([t_res.flatten(), x_res.flatten(), y_res.flatten(), c_res.flatten()]).T
+    s = jnp.zeros((p**4, 1))  # needed for code compatibility with data generator
+
+    return u, y, s
+
+
+# Generate test data corresponding to one input sample
+def generate_one_test_data(u_sol, c_ref, t_ic, idx, p_err=101):
+
+    u = u_sol[idx]
+    u0 = t_ic[idx].reshape(-1, 1)
+
+    c_i = c_ref[idx].reshape(-1, 1)
+
+    t_i = jnp.linspace(0, 1, p_err)
+    x_i = jnp.linspace(0, 1, p_err)
+    y_i = jnp.linspace(0, 1, p_err)
+    t_mesh, x_mesh, y_mesh, c_mesh = jnp.meshgrid(t_i.flatten(), x_i.flatten(), y_i.flatten(),
+                                                  c_i.flatten(), indexing='ij')
+
+    s = u.T.flatten()
+    u = jnp.tile(u0, (p_err ** 3, 1))
+    y = jnp.vstack([t_mesh.flatten(), x_mesh.flatten(), y_mesh.flatten(), c_mesh.flatten()]).T
+
+    return u, y, s
+
+
+def loss_icbc(model_fn, params, data_batch):
     inputs, outputs = data_batch
     u, y_vec = inputs
 
     # Compute forward pass
-    t = y_vec[0]
-    x = y_vec[1]
-    y = y_vec[2]
-    c = y_vec[3]
-    s_pred = apply_net(model_fn, params, u, t, x, y, c)[:, 0, :, :, :, 0]  # remove time dimension and output dim
+    t = y_vec[:, 0]
+    x = y_vec[:, 1]
+    y = y_vec[:, 2]
+    c = y_vec[:, 3]
 
-    outputs = outputs.reshape(-1, 1, 1, 1)
-
-    diff = s_pred - outputs
-
-    # Compute loss
-    loss_val = mse_single(diff)
-    return loss_val
-
-def loss_bc_split(model_fn, params, data_batch):
-    inputs, _ = data_batch
-    u, y_vec = inputs
-
-    # Compute forward pass
-    t = y_vec[0]
-    x = y_vec[1]
-    y = y_vec[2]
-    c = y_vec[3]
     s_pred = apply_net(model_fn, params, u, t, x, y, c)
 
     # Compute loss
-    loss_val = mse_single(s_pred.flatten())
-    return loss_val
-
-
-def loss_bc(model_fn, params, data_batches):
-    # Arrays have same size -> mean of both mse over x and y is possible
-
-    data_batch_x, data_batch_y = data_batches
-
-    loss_val_x = loss_bc_split(model_fn, params, data_batch_x)
-
-    loss_val_y = loss_bc_split(model_fn, params, data_batch_y)
-
-    loss_val = 0.5 * (loss_val_x + loss_val_y)
-
-    return loss_val
+    loss_ic = mse(outputs.flatten(), s_pred)
+    return loss_ic
 
 
 # Define residual loss
@@ -105,61 +160,51 @@ def loss_res(model_fn, params, batch):
     # Fetch data
     inputs, _ = batch
     u, y_vec = inputs
-    t, x, y, c = y_vec
+    # Compute forward pass
+    t = y_vec[:, 0]
+    x = y_vec[:, 1]
+    y = y_vec[:, 2]
+    c = y_vec[:, 3]
 
-    v_t = jnp.ones(t.shape)
+    # Residual PDE
     v_x = jnp.ones(x.shape)
+    v_t = jnp.ones(t.shape)
     v_y = jnp.ones(y.shape)
 
-    s_t = jax.jvp(lambda t_i: apply_net(model_fn, params, u, t_i, x, y, c), (t,), (v_t,))[1]
-    s_xx = hvp_fwdfwd(lambda x_i: apply_net(model_fn, params, u, t, x_i, y, c), (x,), (v_x,), False)
-    s_yy = hvp_fwdfwd(lambda y_i: apply_net(model_fn, params, u, t, x, y_i, c), (y,), (v_y,), False)
+    s_t = jax.vjp(lambda t: apply_net(model_fn, params, u, t, x, y, c), t)[1](v_t)[0]
+    s_xx = jax.jvp(lambda x: jax.vjp(lambda x: apply_net(model_fn, params, u, t, x, y, c), x)[1](v_x)[0], (x,), (v_x,))[1]
+    s_yy = jax.jvp(lambda y: jax.vjp(lambda y: apply_net(model_fn, params, u, t, x, y, c), y)[1](v_y)[0], (y,), (v_y,))[1]
 
-    c_squared = jnp.square(c).reshape(1, 1, 1, 1, -1, 1)  # Reshape c for broadcasting
+    c_squared = jnp.square(c)
 
     pred = s_t - c_squared * (s_xx + s_yy)
 
-    loss_val = mse_single(pred.reshape(-1, 1))
-
-    return loss_val
+    # Compute loss
+    loss = mse_single(pred)
+    return loss
 
 
 def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
-    loss_ics_i = loss_ic(model_fn, params, ics_batch)
-    loss_bcs_i = loss_bc(model_fn, params, bcs_batch)
+    loss_ics_i = loss_icbc(model_fn, params, ics_batch)
+    loss_bcs_i = loss_icbc(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + loss_bcs_i + 4 *loss_res_i
+    loss_value = loss_ics_i + loss_bcs_i + 4 * loss_res_i
     return loss_value
-
-
-def generate_one_test_data(u_sol, c_ref, t_ic, idx, p_err=101):
-
-    u = u_sol[idx]
-    u0 = t_ic[idx].reshape(-1, 1)
-
-    c = c_ref[idx].reshape(-1, 1)
-
-    t = jnp.linspace(0, 1, p_err).reshape(-1, 1)
-    x = jnp.linspace(0, 1, p_err).reshape(-1, 1)
-    y = jnp.linspace(0, 1, p_err).reshape(-1, 1)
-
-    y_vec = (t, x, y, c)
-
-    return u0, y_vec, u
 
 
 def get_error(model_fn, params, u_sol, c_ref, t_ic, idx, p_err=101, return_data=False):
     u_test, y_test_vec, s_test = generate_one_test_data(u_sol, c_ref, t_ic, idx, p_err)
 
-    t_test, x_test, y_test, c_ref = y_test_vec
+    t_test = y_test_vec[:, 0]
+    x_test = y_test_vec[:, 1]
+    y_test = y_test_vec[:, 2]
+    c_test = y_test_vec[:, 3]
 
-    s_pred = apply_net(model_fn, params, u_test, t_test, x_test, y_test, c_ref)
-
-    s_pred = s_pred[0, :, :, :, 0, 0]  # first example as only one branch input
-
+    s_pred = apply_net(model_fn, params, u_test, t_test, x_test, y_test, c_test)
     error = jnp.linalg.norm(s_test - s_pred) / jnp.linalg.norm(s_test)
+
     if return_data:
-        return error, s_pred, s_test
+        return error, s_pred
     else:
         return error
 
@@ -177,7 +222,7 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, c_ref, t_ic, idx,
     x = jnp.linspace(0, 1, args.p_test)
     y = jnp.linspace(0, 1, args.p_test)
 
-    diff_sq = jnp.square(u-s_pred)
+    diff_sq = jnp.square(u - s_pred)
 
     fig = plt.figure(figsize=(9, 9))
 
@@ -288,10 +333,8 @@ def visualize(args, model_fn, params, result_dir, epoch, usol, c_ref, t_ic, idx,
 
 
 def main_routine(args):
-    # Check if separable network is used
-    if not args.separable:
-        raise ValueError('Needs separable DeepONet for separable example')
-
+    if args.separable:
+        raise ValueError('Needs normal DeepONet, not separable DeepONet')
     # Prepare the training data
     # Load data
     path = os.path.join(os.getcwd(), 'data/heat/heat_const.mat')  # Please use the matlab script to generate data
@@ -314,45 +357,50 @@ def main_routine(args):
     # ICs data
     u_train = jnp.linspace(0, 1, args.n_train)[:, None]  # set temperatures
 
-    s_ics_train = u_train  # repeat u0 for all x, y, c samples, mapping is done in loss function
-    # t sampled just once
-    t_ics_train = jnp.zeros((1, 1))
-    x_ics_train = jnp.linspace(0, 1, args.p_ics_train+2)[1:-1][:, None]  # exclude boundaries
-    y_ics_train = jnp.linspace(0, 1, args.p_ics_train+2)[1:-1][:, None]  # exclude boundaries
-    # IC independent from c
-    c_ics_train = jnp.logspace(c_2_min_power, c_2_max_power, args.p_ics_train)[:, None]
+    # ICs data
+    u_ics_train, y_ics_train, s_ics_train = (jax.vmap(generate_one_ics_training_data,
+                                                      in_axes=(0, None))
+                                             (u_train, args.p_ics_train))
+    u_ics_train = u_ics_train.reshape(args.n_train * args.p_ics_train**3, -1)
+    y_ics_train = y_ics_train.reshape(args.n_train * args.p_ics_train**3, -1)
+    s_ics_train = s_ics_train.reshape(args.n_train * args.p_ics_train**3, -1)
 
-    # Create data generator
-    ics_dataset = DataGenerator(u_train, c_ics_train, t_ics_train, x_ics_train,
-                                y_ics_train, s_ics_train, args.n_train, keys[0])
+    unique_rows = jnp.unique(y_ics_train, axis=0)
 
     # BCs data
-    s_bcs_train = jnp.zeros((1, 1))  # dummy data
-    x_bc_train_1 = jnp.array([0, 1]).reshape(-1, 1)
-    x_bc_train_2 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
-    y_bc_train_1 = jnp.linspace(0, 1, args.p_ics_train)[:, None]
-    y_bc_train_2 = jnp.array([0, 1]).reshape(-1, 1)
-    # BC independent from c
-    c_bc_train = jnp.logspace(c_2_min_power, c_2_max_power, args.p_bcs_train)[:, None]
-    t_bc_train = jnp.linspace(0, 1, args.p_bcs_train)[:, None]
+    u_bcs_train, y_bcs_train, s_bcs_train = (jax.vmap(generate_one_bcs_training_data,
+                                                      in_axes=(0, None))
+                                             (u_train, args.p_bcs_train))
 
-    # Create data generator
-    bcs_dataset_x = DataGenerator(u_train, c_bc_train, t_bc_train, x_bc_train_1,
-                                y_bc_train_1, s_bcs_train, args.n_train, keys[1])
-
-    bcs_dataset_y = DataGenerator(u_train, c_bc_train, t_bc_train, x_bc_train_2,
-                                  y_bc_train_2, s_bcs_train, args.n_train, keys[2])
+    u_bcs_train = u_bcs_train.reshape(args.n_train * 4 * args.p_bcs_train**3, -1)
+    y_bcs_train = y_bcs_train.reshape(args.n_train * 4 * args.p_bcs_train**3, -1)
+    s_bcs_train = s_bcs_train.reshape(args.n_train * 4 * args.p_bcs_train**3, -1)
 
     # Residual data
-    s_res_train = jnp.zeros((1, 1))  # dummy data
-    x_res_train = jnp.linspace(0, 1, args.p_res_train)[:, None]
-    y_res_train = jnp.linspace(0, 1, args.p_res_train)[:, None]
-    t_res_train = jnp.linspace(0, 1, args.p_res_train)[:, None]
-    c_res_train = jnp.logspace(c_2_min_power, c_2_max_power, args.p_res_train)[:, None]
+    u_res_train, y_res_train, s_res_train = (jax.vmap(generate_one_res_training_data,
+                                                      in_axes=(0, None))
+                                             (u_train, args.p_res_train))
+
+    u_res_train = u_res_train.reshape(args.n_train * args.p_res_train**4, -1)
+    y_res_train = y_res_train.reshape(args.n_train * args.p_res_train**4, -1)
+    s_res_train = s_res_train.reshape(args.n_train * args.p_res_train**4, -1)
+
+    # Calculate batch_sizes
+    fac = 100  # factor for memory
+    batch_size_ics = (args.n_train * args.p_ics_train**3) // fac
+    batch_size_bcs = (args.n_train * 4 * args.p_bcs_train**3) // fac
+    batch_size_res = (args.n_train * args.p_res_train**4) // fac
+    # longer training and scheduler steps
+    args.lr_schedule_steps = args.lr_schedule_steps * fac
+    args.epochs = args.epochs * fac
+    print("Adjusting batch sizes and training length for memory constraints:")
+    print(f"Batch sizes: ics: {batch_size_ics}, bcs: {batch_size_bcs}, res: {batch_size_res} with factor {fac}")
+    print(f"Training for {args.epochs} epochs with lr scheduler steps {args.lr_schedule_steps}")
 
     # Create data generators
-    res_dataset = DataGenerator(u_train, c_res_train, t_res_train, x_res_train,
-                                y_res_train, s_res_train, args.n_train, keys[3])
+    ics_dataset = DataGenerator(u_ics_train, y_ics_train, s_ics_train, batch_size_ics, keys[0])
+    bcs_dataset = DataGenerator(u_bcs_train, y_bcs_train, s_bcs_train, batch_size_bcs, keys[1])
+    res_dataset = DataGenerator(u_res_train, y_res_train, s_res_train, batch_size_res, keys[2])
 
     # Create test data
     test_range = jnp.arange(0, u_sol.shape[0])
@@ -360,7 +408,7 @@ def main_routine(args):
     test_idx_list = jnp.split(test_idx, 25)
 
     # Create model
-    args, model, model_fn, params = setup_deeponet(args, keys[5])
+    args, model, model_fn, params = setup_deeponet(args, keys[4])
 
     # Define optimizer with optax (ADAM)
     # optimizer
@@ -375,8 +423,7 @@ def main_routine(args):
 
     # Data
     ics_data = iter(ics_dataset)
-    bcs_data_x = iter(bcs_dataset_x)
-    bcs_data_y = iter(bcs_dataset_y)
+    bcs_data = iter(bcs_dataset)
     res_data = iter(res_dataset)
 
     # create dir for saving results
@@ -391,10 +438,10 @@ def main_routine(args):
         os.remove(log_file)
 
     # Set up checkpointing
-    if args.checkpoint_iter>0:
+    if args.checkpoint_iter > 0:
         options = ocp.CheckpointManagerOptions(max_to_keep=args.checkpoints_to_keep,
                                                save_interval_steps=args.checkpoint_iter,
-                                               save_on_steps=[args.epochs] # save on last iteration
+                                               save_on_steps=[args.epochs]  # save on last iteration
                                                )
         mngr = ocp.CheckpointManager(
             os.path.join(result_dir, 'ckpt'), options=options, item_names=('metadata', 'params')
@@ -446,9 +493,7 @@ def main_routine(args):
 
         # Fetch data
         ics_batch = next(ics_data)
-        bcs_batch_x = next(bcs_data_x)
-        bcs_batch_y = next(bcs_data_y)
-        bcs_batch = (bcs_batch_x, bcs_batch_y)
+        bcs_batch = next(bcs_data)
         res_batch = next(res_data)
 
         # Do Step
@@ -458,9 +503,10 @@ def main_routine(args):
         if it % args.log_iter == 0:
             # Compute losses
             loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
-            loss_ics_value = loss_ic(model_fn, params, ics_batch)
-            loss_bcs_value = loss_bc(model_fn, params, bcs_batch)
+            loss_ics_value = loss_icbc(model_fn, params, ics_batch)
+            loss_bcs_value = loss_icbc(model_fn, params, bcs_batch)
             loss_res_value = loss_res(model_fn, params, res_batch)
+
             # compute error over test data (split into batches to avoid memory issues)
             errors = []
             for test_idx in test_idx_list:
@@ -485,14 +531,15 @@ def main_routine(args):
 
             # Save results
             with open(log_file, 'a') as f:
-                f.write(f'{it+1+offset_epoch}, {loss}, {loss_ics_value}, '
+                f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
         # Visualize result
         if args.vis_iter > 0:
             if (it + 1) % args.vis_iter == 0:
                 for k_i in k_test:
                     # Visualize test example
-                    visualize(args, model_fn, params, result_dir, it+1+offset_epoch, u_sol, c_ref, t_ic, k_i, True)
+                    visualize(args, model_fn, params, result_dir, it + 1 + offset_epoch, u_sol, c_ref, t_ic, k_i,
+                              True)
 
         # Save checkpoint
         mngr.save(
@@ -505,9 +552,9 @@ def main_routine(args):
 
     mngr.wait_until_finished()
 
+    # Save results
     runtime = time.time() - start
 
-    # Save results
     with open(log_file, 'a') as f:
         f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
                 f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
@@ -523,7 +570,7 @@ if __name__ == "__main__":
                         help='latent layer size in DeepONet, also called >>p<<, multiples are used for splits')
     parser.add_argument('--stacked_deeponet', dest='stacked_do', default=False, action='store_true',
                         help='use stacked DeepONet, if false use unstacked DeepONet')
-    parser.add_argument('--separable', dest='separable', default=True, action='store_true',
+    parser.add_argument('--separable', dest='separable', default=False, action='store_true',
                         help='use separable DeepONets')
     parser.add_argument('--r', type=int, default=50, help='hidden tensor dimension in separable DeepONets')
 
@@ -555,7 +602,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
 
     # result directory
-    parser.add_argument('--result_dir', type=str, default='results/heat/separable/',
+    parser.add_argument('--result_dir', type=str, default='results/heat/normal/',
                         help='a directory to save results, relative to cwd')
 
     # log settings
@@ -572,7 +619,7 @@ if __name__ == "__main__":
     parser.add_argument('--p_test', type=int, default=101,
                         help='number of locations for evaluating the error')
     parser.add_argument('--n_train', type=int, default=25,
-                        help='number of train samples, here: number of branch inputs')
+                        help='number of training samples. needed for data generation')
 
     # Checkpoint settings
     parser.add_argument('--checkpoint_path', type=str, default=None,
