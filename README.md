@@ -27,6 +27,34 @@ Authors: Somdatta Goswami, Luis Mandl
 #### Multiple inputs to branch network
 function with several values per sensor can be included which will be achieved by flattening the input in the DeepONet 
 
+## Dependencies
+
+We have tested and validated this project with the following versions:
+
+- **Python**: 3.11
+- **CUDA**: 12.4
+- **cuDNN**: 8.9
+- **tqdm**: 4.66.2
+- **torch**: 2.2.2
+- **scipy**: 1.12.0
+- **orbax-checkpoint**: 0.5.11
+- **optax**: 0.2.2
+- **matplotlib**: 3.8.3
+- **jax[cuda12]**: 0.4.25
+- **jaxlib**: 0.4.25+cuda12.cudnn89
+- **flax**: 0.8.3
+
+These versions were specifically chosen for compatibility. Using different versions might result in compatibility issues. To replicate our environment, ensure you use these exact versions or later.
+
+## Installation
+
+To install the required dependencies, run:
+
+```bash
+pip install -r requirements.txt
+
+
+
 ## References
 
 Reference Codes: 

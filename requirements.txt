@@ -1,0 +1,13 @@
+# Python version requirement
+python==3.11
+
+# Dependencies with minimal versions for compatibility
+tqdm==4.66.2
+torch==2.2.2
+scipy==1.12.0
+orbax-checkpoint==0.5.11
+optax==0.2.2
+matplotlib==3.8.3
+jax[cuda12]==0.4.25
+jaxlib==0.4.25+cuda12.cudnn89
+flax==0.8.3
