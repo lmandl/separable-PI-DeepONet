@@ -9,5 +9,5 @@ orbax-checkpoint==0.5.11
 optax==0.2.2
 matplotlib==3.8.3
 jax[cuda12]==0.4.25
-jaxlib==0.4.25+cuda12.cudnn89
+#jaxlib==0.4.25+cuda12.cudnn89
 flax==0.8.3
