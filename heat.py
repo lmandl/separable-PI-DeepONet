@@ -550,10 +550,24 @@ def main_routine(args):
             ),
         )
 
-    mngr.wait_until_finished()
-
     # Save results
     runtime = time.time() - start
+
+    mngr.wait_until_finished()
+
+    loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
+    loss_ics_value = loss_icbc(model_fn, params, ics_batch)
+    loss_bcs_value = loss_icbc(model_fn, params, bcs_batch)
+    loss_res_value = loss_res(model_fn, params, res_batch)
+
+    # compute error over test data (split into batches to avoid memory issues)
+    errors = []
+    for test_idx in test_idx_list:
+        errors.append(jax.vmap(get_error, in_axes=(None, None, None,
+                                                   None, None, 0, None))(model_fn, params, u_sol, c_ref,
+                                                                         t_ic, test_idx, args.p_test))
+    errors = jnp.array(errors).flatten()
+    err_val = jnp.mean(errors)
 
     with open(log_file, 'a') as f:
         f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
@@ -606,7 +620,7 @@ if __name__ == "__main__":
                         help='a directory to save results, relative to cwd')
 
     # log settings
-    parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
+    parser.add_argument('--log_iter', type=int, default=100, help='iteration to save loss and error')
     parser.add_argument('--vis_iter', type=int, default=0, help='iteration to save visualization')
 
     # Problem / Data Settings

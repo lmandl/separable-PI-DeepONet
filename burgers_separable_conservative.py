@@ -423,9 +423,22 @@ def main_routine(args):
             ),
         )
 
+    runtime = time.time() - start
+
     mngr.wait_until_finished()
 
-    runtime = time.time() - start
+    loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
+    loss_ics_value = loss_ics(model_fn, params, ics_batch)
+    loss_bcs_value = loss_bcs(model_fn, params, bcs_batch)
+    loss_res_value = loss_res(model_fn, params, res_batch)
+
+    # compute error over test data (split into 10 batches to avoid memory issues)
+    errors = []
+    for test_idx in test_idx_list:
+        errors.append(jax.vmap(get_error, in_axes=(None, None, None, 0, None))(model_fn, params, u_sol, test_idx,
+                                                                               args.p_test))
+    errors = jnp.array(errors).flatten()
+    err_val = jnp.mean(errors)
 
     # Save results
     with open(log_file, 'a') as f:

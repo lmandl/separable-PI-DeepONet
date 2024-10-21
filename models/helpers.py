@@ -21,7 +21,6 @@ def apply_net(model_fn, params, branch_input, *trunk_in):
         trunk_input = jnp.stack(trunk_in, axis=-1)
     out = model_fn(params, branch_input, trunk_input)
     # Reshape to vector for single output for easier gradient computation
-    # TODO: Adapt / Check squeeze
     if out.shape[1]==1:
         out = jnp.squeeze(out, axis=1)
     return out

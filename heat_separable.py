@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import shutil
 import orbax.checkpoint as ocp
 
-from models import setup_deeponet, mse, mse_single, step, hvp_fwdfwd
+from models import setup_deeponet, mse, mse_single, hvp_fwdfwd, step
 from models import apply_net_sep as apply_net
 
 
@@ -128,7 +128,7 @@ def loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch):
     loss_ics_i = loss_ic(model_fn, params, ics_batch)
     loss_bcs_i = loss_bc(model_fn, params, bcs_batch)
     loss_res_i = loss_res(model_fn, params, res_batch)
-    loss_value = loss_ics_i + loss_bcs_i + 20 * loss_res_i
+    loss_value = loss_ics_i + loss_bcs_i + 4 * loss_res_i
     return loss_value
 
 
@@ -428,6 +428,18 @@ def main_routine(args):
     # Choose Plots for visualization
     k_test = [test_idx[i] for i in [0, 1, 2, 3, 4]]  # index
 
+    # Save per_example error if save_pred is True
+    if args.save_pred:
+        err_file = os.path.join(result_dir, 'individual_error.csv')
+        # header
+        hdr = "epoch,"
+        for idx in test_idx:
+            hdr += f"err_idx_{idx},"
+
+        # Save arguments
+        with open(err_file, 'a') as f:
+            f.write(hdr+'\n')
+
     # Initial visualization
     if args.vis_iter > 0:
         for k_i in k_test:
@@ -463,12 +475,26 @@ def main_routine(args):
             loss_res_value = loss_res(model_fn, params, res_batch)
             # compute error over test data (split into batches to avoid memory issues)
             errors = []
-            for test_idx in test_idx_list:
+            for test_idx_i in test_idx_list:
                 errors.append(jax.vmap(get_error, in_axes=(None, None, None,
                                                            None, None, 0, None))(model_fn, params, u_sol, c_ref,
-                                                                                 t_ic, test_idx, args.p_test))
+                                                                                 t_ic, test_idx_i, args.p_test))
+
             errors = jnp.array(errors).flatten()
             err_val = jnp.mean(errors)
+
+            if args.save_pred:
+                pred_path = os.path.join(result_dir, f'pred/{it + 1 + offset_epoch}/')
+                if not os.path.exists(pred_path):
+                    os.makedirs(pred_path)
+                err = f"{it + 1 + offset_epoch},"
+                for idx in test_idx:
+                    err_i, s_pred, _ = get_error(model_fn, params, u_sol, c_ref, t_ic, idx,
+                                                 args.p_test, return_data=True)
+                    err += f"{err_i},"
+                    #jnp.save(os.path.join(pred_path, f'pred_{idx}.npy'), s_pred)  # Uncomment for saved predictions
+                with open(err_file, 'a') as f:
+                    f.write(err + '\n')
 
             # Print losses
             pbar.set_postfix({'l': f'{loss:.2e}',
@@ -487,6 +513,7 @@ def main_routine(args):
             with open(log_file, 'a') as f:
                 f.write(f'{it+1+offset_epoch}, {loss}, {loss_ics_value}, '
                         f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
+
         # Visualize result
         if args.vis_iter > 0:
             if (it + 1) % args.vis_iter == 0:
@@ -503,14 +530,45 @@ def main_routine(args):
             ),
         )
 
+    runtime = time.time() - start
+
     mngr.wait_until_finished()
 
-    runtime = time.time() - start
+    loss = loss_fn(model_fn, params, ics_batch, bcs_batch, res_batch)
+    loss_ics_value = loss_ic(model_fn, params, ics_batch)
+    loss_bcs_value = loss_bc(model_fn, params, bcs_batch)
+    loss_res_value = loss_res(model_fn, params, res_batch)
+    # compute error over test data (split into batches to avoid memory issues)
+
+    errors = []
+    for test_idx_i in test_idx_list:
+        errors.append(jax.vmap(get_error, in_axes=(None, None, None,
+                                                   None, None, 0, None))(model_fn, params, u_sol, c_ref,
+                                                                         t_ic, test_idx_i, args.p_test))
+
+    errors = jnp.array(errors).flatten()
+    err_val = jnp.mean(errors)
+    errors = []
 
     # Save results
     with open(log_file, 'a') as f:
         f.write(f'{it + 1 + offset_epoch}, {loss}, {loss_ics_value}, '
                 f'{loss_bcs_value}, {loss_res_value}, {err_val}, {runtime}\n')
+
+    if args.save_pred:
+        pred_path = os.path.join(result_dir, f'pred/{it + 1 + offset_epoch}/')
+        if not os.path.exists(pred_path):
+            os.makedirs(pred_path)
+        err = f"{it + 1 + offset_epoch},"
+        for idx in test_idx:
+            err_i, s_pred, _ = get_error(model_fn, params, u_sol, c_ref, t_ic, idx,
+                                         args.p_test, return_data=True)
+            err += f"{err_i},"
+            #jnp.save(os.path.join(pred_path, f'pred_{idx}.npy'), s_pred)
+        with open(err_file, 'a') as f:
+            f.write(err + '\n')
+
+    return err_val
 
 
 if __name__ == "__main__":
@@ -548,11 +606,12 @@ if __name__ == "__main__":
     # Training settings
     parser.add_argument('--seed', type=int, default=1234, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--epochs', type=int, default=150000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=100000, help='training epochs')
     parser.add_argument('--lr_scheduler', type=str, default='exponential_decay',
                         choices=['constant', 'exponential_decay'], help='learning rate scheduler')
-    parser.add_argument('--lr_schedule_steps', type=int, default=1000, help='decay steps for lr scheduler')
+    parser.add_argument('--lr_schedule_steps', type=int, default=2000, help='decay steps for lr scheduler')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for lr scheduler')
+    parser.add_argument('--loss_fac', type=int, default=1, help='factor for loss weighting')
 
     # result directory
     parser.add_argument('--result_dir', type=str, default='results/heat/separable/',
@@ -560,6 +619,8 @@ if __name__ == "__main__":
 
     # log settings
     parser.add_argument('--log_iter', type=int, default=1000, help='iteration to save loss and error')
+    parser.add_argument('--save_pred', dest='save_pred', default=True, action='store_true',
+                        help='save predictions at log_iter')
     parser.add_argument('--vis_iter', type=int, default=0, help='iteration to save visualization')
 
     # Problem / Data Settings

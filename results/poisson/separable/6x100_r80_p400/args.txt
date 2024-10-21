@@ -1,0 +1,30 @@
+num_outputs: 1
+hidden_dim: 400
+stacked_do: False
+separable: True
+r: 80
+branch_cnn: True
+branch_cnn_blocks: [[16, 2, 2, 'relu'], ['avg_pool', 2, 2, 2, 2], [32, 2, 2, 'relu'], ['avg_pool', 2, 2, 2, 2], [64, 2, 2, 'relu'], ['avg_pool', 2, 2, 2, 2], [400, 'relu'], [400, 'relu']]
+branch_cnn_input_channels: 1
+branch_cnn_input_size: (51, 51)
+split_branch: False
+trunk_layers: [50, 50, 50, 50, 50, 50]
+trunk_input_features: 3
+split_trunk: False
+seed: 1234
+lr: 0.001
+epochs: 60000
+lr_scheduler: exponential_decay
+lr_schedule_steps: 5000
+lr_decay_rate: 0.8
+result_dir: results/poisson/separable/
+log_iter: 100
+save_pred: False
+vis_iter: 10000
+n_train: 2500
+p_diff_train: 21
+batch_size: 500
+checkpoint_path: None
+checkpoint_iter: 5000
+checkpoints_to_keep: 1
+total_params: 6187767
