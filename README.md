@@ -1,14 +1,14 @@
-# DeepONets in JAX
+# Separable DeepONets in JAX
 
-Code for Physics-Informed DeepONets (https://arxiv.org/abs/1910.03193) in JAX 
+Code for Separable Physics-Informed DeepONets (https://arxiv.org/abs/2407.15887) in JAX 
 
 Authors: Somdatta Goswami, Luis Mandl, Lena Lambers, Tim Ricken
 
 ### Models
 
 #### Implemented
-* physics-informed DeepONets (https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
-* separable PI DeepONets (see separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
+* physics-informed DeepONets (https://arxiv.org/abs/1910.03193, https://arxiv.org/abs/2103.10974 ,  https://arxiv.org/abs/2207.05748)
+* separable PI DeepONets (Idea taken from separable PINNs: https://jwcho5576.github.io/spinn.github.io/, https://arxiv.org/abs/2306.15969)
 * Burgers Equation (Data taken from https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets)
 * Biot's Equation for Consolidation
 * Heat equation
@@ -40,10 +40,3 @@ To install the required dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
-
-## References
-
-Reference Codes: 
-* https://github.com/PredictiveIntelligenceLab/Physics-informed-DeepONets
-* https://github.com/lululxvi/deeponet
-* https://github.com/lululxvi/deepxde
