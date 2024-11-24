@@ -17,7 +17,7 @@ In this work, we introduce the Separable physics-informed DeepONet (Sep-PI-DeepO
 * Heat equation
 * Poisson's equation with random field source and CNN as branch network
 
-For physics-informed DeepONets, we have referred to the following works: https://arxiv.org/abs/1910.03193, https://arxiv.org/abs/2103.10974, and https://arxiv.org/abs/2207.05748
-The idea of separable PI DeepONets is motivated from separable PINNs: https://jwcho5576.github.io/spinn.github.io/ and https://arxiv.org/abs/2306.15969
+For physics-informed DeepONet, we have referred to the following works: https://arxiv.org/abs/1910.03193, https://arxiv.org/abs/2103.10974, and https://arxiv.org/abs/2207.05748
+The idea of separable PI DeepONets is motivated by separable PINNs: https://jwcho5576.github.io/spinn.github.io/ and https://arxiv.org/abs/2306.15969
 
 
