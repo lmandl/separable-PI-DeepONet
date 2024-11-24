@@ -7,7 +7,7 @@ In this work, we introduce the Separable physics-informed DeepONet (Sep-PI-DeepO
 ## Framework
 
 <p align="center">
-  <img src="https://github.com/lmandl/separable-PI-DeepONet/blob/master/Schematic.pdf" alt="Sep-PI-DeepONet" width="600"/>
+  <img src="Schematic.png" alt="Sep-PI-DeepONet" width="600"/>
   <br/>
   <strong>
 </p>
