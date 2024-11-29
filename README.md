@@ -30,14 +30,16 @@ pip install -r requirements.txt
 These versions were specifically chosen for compatibility. Using different versions might result in compatibility issues. To replicate our environment, ensure you use these exact versions or later.
 
 ### Citation:
-If you use this code for your research, please cite our work as:\\
-@article{MANDL2025117586,\\
-title = {{Separable physics-informed DeepONet: Breaking the curse of dimensionality in physics-informed machine learning}},\\
-journal = {Computer Methods in Applied Mechanics and Engineering},\\
-volume = {434},\\
-pages = {117586},\\
-year = {2025},\\
-author = {Luis Mandl and Somdatta Goswami and Lena Lambers and Tim Ricken}}\\
+If you use this code for your research, please cite our work as:
+```
+@article{MANDL2025117586,
+title = {{Separable physics-informed DeepONet: Breaking the curse of dimensionality in physics-informed machine learning}},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {434},
+pages = {117586},
+year = {2025},
+author = {Luis Mandl and Somdatta Goswami and Lena Lambers and Tim Ricken}}
+```
 
 
 
